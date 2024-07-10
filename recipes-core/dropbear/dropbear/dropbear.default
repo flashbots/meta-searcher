@@ -1,0 +1,3 @@
+# Disallow password logins by default
+# Note: allows login by root user
+DROPBEAR_EXTRA_ARGS="-s"

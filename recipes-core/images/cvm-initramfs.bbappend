@@ -1,0 +1,1 @@
+PACKAGE_INSTALL:append = " searcher-ssh-key"
