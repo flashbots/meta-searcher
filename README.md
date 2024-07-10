@@ -1,4 +1,17 @@
-flashbots internal testing:
+So far, this layer adds the searcher's SSH pubkey to the authorized_keys file. 
+It uses [dropbear SSH](https://matt.ucc.asn.au/dropbear/dropbear.html), a minimal SSH server with support for public key authentication. 
+Because root and password login are disabled by default, the TDX machine can only be accessed via SSH and only by that searcher's ssh key pair. 
+
+The meta-searcher layer appends:
+- searcher-ssh-key package to meta-confidential-compute layer's cvm-initramfs.bb
+- a new dropbear configuration to meta layer's dropbear that disables password logins
+
+The searcher-ssh-key package creates the .ssh directory and adds the searcher's SSH pubkey to the authorized_keys file to the root user.
+The shell script is configured to run at the last stage of the init process. 
+
+Note: some local networking commands add a static IP to enable testing via qemu. 
+
+**flashbots internal testing**:
 
 - to add to your yocto build, clone this repo and add as a layer in bblayers.conf file
 - turn off debug-tweaks in cvm-initramfs.bb from the meta-confidential-compute layer which allows passwordless root logins
