@@ -1,41 +1,20 @@
-This README file contains information on the contents of the meta-searcher layer.
+flashbots internal testing:
 
-Please see the corresponding sections below for details.
+- to add to your yocto build, clone this repo and add as a layer in bblayers.conf file
+- turn off debug-tweaks in cvm-initramfs.bb from the meta-confidential-compute layer which allows passwordless root logins
 
-Dependencies
-============
+- to build & start locally:
 
-  URI: <first dependency>
-  branch: <branch name>
+```
+cd poky
+source oe-init-build-env
+bitbake cvm-image-azure
+runqemu cvm-image-azure wic nographic kvm ovmf qemuparams="-m 8G"
+```
 
-  URI: <second dependency>
-  branch: <branch name>
-
-  .
-  .
-  .
-
-Patches
-=======
-
-Please submit any patches against the meta-searcher layer to the xxxx mailing list (xxxx@zzzz.org)
-and cc: the maintainer:
-
-Maintainer: XXX YYYYYY <xxx.yyyyyy@zzzzz.com>
-
-Table of Contents
-=================
-
-  I. Adding the meta-searcher layer to your build
- II. Misc
-
-
-I. Adding the meta-searcher layer to your build
-=================================================
-
-Run 'bitbake-layers add-layer meta-searcher'
-
-II. Misc
-========
-
---- replace with specific information about the meta-searcher layer ---
+- to test:
+  - open another terminal and SSH into our dev server
+```
+ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R "192.168.7.2"
+ssh -i ~/.ssh/id_rsa_princess root@192.168.7.2
+```
