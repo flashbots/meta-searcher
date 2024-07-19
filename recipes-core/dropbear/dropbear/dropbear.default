@@ -1,3 +1,4 @@
-# Disallow password logins by default
-# Note: allows login by root user
-DROPBEAR_EXTRA_ARGS="-s"
+# -s: Disallow password logins by default
+# -w: Disallow root logins
+# -g: Disable password logins for root
+DROPBEAR_EXTRA_ARGS="-s -w -g"
