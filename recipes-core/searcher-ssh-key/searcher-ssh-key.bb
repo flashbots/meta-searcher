@@ -1,5 +1,5 @@
-SUMMARY = "Adds Searcher SSH Key for Root User"
-DESCRIPTION = "An initialization script that sets up SSH access for the root user with only the searcher's SSH key and ensures the necessary directory permissions for dropbear."
+SUMMARY = "Adds Searcher SSH Key for Searcher User"
+DESCRIPTION = "An initialization script that sets up SSH access for the searcher user with only the searcher's SSH key and ensures the necessary directory permissions for dropbear."
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
