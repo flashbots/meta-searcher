@@ -8,7 +8,7 @@ The meta-searcher layer appends:
 
 The meta-searcher layer is assigned priority = 30 to override configurations in other layers (meta-confidential-compute = 20).
 
-The searcher-ssh-key package creates the .ssh directory and adds the searcher's SSH pubkey to the authorized_keys file to the root user.
+The searcher-ssh-key package creates the .ssh directory and adds the searcher's SSH pubkey to the authorized_keys file to the princess user.
 The shell script is configured to run at the last stage of the init process. 
 
 Note: some local networking commands add a static IP to enable testing via qemu. 
