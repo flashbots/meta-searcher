@@ -31,5 +31,5 @@ runqemu cvm-image-azure wic nographic kvm ovmf qemuparams="-m 8G"
   - open another terminal and SSH into our dev server
 ```
 ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R "192.168.7.2"
-ssh -i ~/.ssh/id_rsa_princess root@192.168.7.2
+ssh -i ~/.ssh/id_rsa_princess princess@192.168.7.2
 ```
