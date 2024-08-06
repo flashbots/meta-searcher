@@ -8,18 +8,6 @@
 # Short-Description: Creates searcher user and adds searcher ssh key
 ### END INIT INFO
 
-DAEMON_PROXY=/usr/bin/cvm-reverse-proxy
-LOGFILE_PROXY=/tmp/proxy.log
-PIDFILE_PROXY=/var/run/proxy.pid
-
-start_proxy() {
-    echo -n "Starting attested TLS Proxy: "
-    start-stop-daemon -S -p $PIDFILE_PROXY -N -10 -b -a /bin/sh -- -c "exec 
-        ${DAEMON_PROXY} -server -target-port=8645 -listen-port=8745 \
-        2>&1 | tee ${LOGFILE_PROXY}"
-    echo "proxy."
-}
-
 start() {
   # Start the attested TLS reverse proxy server
   start_proxy
@@ -48,6 +36,9 @@ start() {
   chmod 600 /home/searcher/.ssh/authorized_keys
   chown searcher:searcher /home/searcher/.ssh/authorized_keys
   echo "Added Searcher SSH key to searcher user's authorized_keys"
+
+  # Generate dropbear host public key to share upon attestation
+  dropbearkey -y -f /etc/dropbear/dropbear_rsa_host_key | grep -m 1 "^ssh-rsa " > /etc/dropbear/dropbear_rsa_host_key.pub
 }
 
 case "$1" in

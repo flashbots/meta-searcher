@@ -8,7 +8,7 @@ SRC_URI = "file://searcher-ssh-key.sh.in"
 inherit update-rc.d
 
 INITSCRIPT_NAME = "searcher-ssh-key"
-INITSCRIPT_PARAMS = "defaults 98"
+INITSCRIPT_PARAMS = "defaults 97"
 
 python () {
     origenv = d.getVar("BB_ORIGENV", False)
@@ -26,10 +26,7 @@ do_install() {
     sed -e 's|@SEARCHER_SSH_KEY@|${SEARCHER_SSH_KEY}|g' \
         ${WORKDIR}/searcher-ssh-key.sh.in > ${WORKDIR}/searcher-ssh-key.sh
     
-    install -m 0755 ${WORKDIR}/searcher-ssh-key.sh ${D}${sysconfdir}/init.d/searcher-ssh-key
+    install -m 0755 ${WORKDIR}/searcher-ssh-key.sh ${D}${sysconfdir}/init.d/${INITSCRIPT_NAME}
 }
 
-DEPENDS += "cvm-reverse-proxy"
-RDEPENDS:${PN} = "cvm-reverse-proxy"
-
-FILES:${PN} = "${sysconfdir}/init.d/searcher-ssh-key"
+FILES:${PN} = "${sysconfdir}/init.d/${INITSCRIPT_NAME}"

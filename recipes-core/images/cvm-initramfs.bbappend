@@ -1,1 +1,1 @@
-PACKAGE_INSTALL:append = " searcher-ssh-key"
+PACKAGE_INSTALL:append = " searcher-ssh-key ssh-pubkey-server"
