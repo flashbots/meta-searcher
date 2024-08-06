@@ -1,1 +1,1 @@
-PACKAGE_INSTALL:append = " searcher-ssh-key ssh-pubkey-server"
+PACKAGE_INSTALL:append = " searcher-ssh-key ssh-pubkey-server su-restriction"
