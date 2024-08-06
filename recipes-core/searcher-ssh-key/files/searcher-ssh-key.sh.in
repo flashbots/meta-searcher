@@ -1,0 +1,66 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          searcher-ssh-key
+# Required-Start:    $all
+# Required-Stop:     
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6   
+# Short-Description: Creates searcher user and adds searcher ssh key
+### END INIT INFO
+
+DAEMON_PROXY=/usr/bin/cvm-reverse-proxy
+LOGFILE_PROXY=/tmp/proxy.log
+PIDFILE_PROXY=/var/run/proxy.pid
+
+start_proxy() {
+    echo -n "Starting attested TLS Proxy: "
+    start-stop-daemon -S -p $PIDFILE_PROXY -N -10 -b -a /bin/sh -- -c "exec 
+        ${DAEMON_PROXY} -server -target-port=8645 -listen-port=8745 \
+        2>&1 | tee ${LOGFILE_PROXY}"
+    echo "proxy."
+}
+
+start() {
+  # Start the attested TLS reverse proxy server
+  start_proxy
+
+  echo "Starting searcher-ssh-key script"
+  # Add searcher user
+  if ! id "searcher" &>/dev/null; then
+      adduser --disabled-password --gecos "" searcher
+      echo "Created searcher user"
+  else
+      echo "searcher user already exists"
+  fi
+
+  # Create .ssh directory and set permission
+  mkdir -p /home/searcher/.ssh
+  chmod 700 /home/searcher/.ssh
+  chown searcher:searcher /home/searcher/.ssh
+
+  # Add searcher user to subuid & subgid
+  echo "searcher:100000:65536" > /etc/subuid
+  echo "searcher:100000:65536" > /etc/subgid
+
+  # Add searcher's ssh key to authorized_keys file
+  SSH_KEY="@SEARCHER_SSH_KEY@"
+  echo "$SSH_KEY" > /home/searcher/.ssh/authorized_keys
+  chmod 600 /home/searcher/.ssh/authorized_keys
+  chown searcher:searcher /home/searcher/.ssh/authorized_keys
+  echo "Added Searcher SSH key to searcher user's authorized_keys"
+}
+
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    echo "Stopping searcher-ssh-key script"
+    ;;
+  *)
+    echo "Usage: $0 {start|stop}"
+    exit 1
+    ;;
+esac
+
+exit 0
