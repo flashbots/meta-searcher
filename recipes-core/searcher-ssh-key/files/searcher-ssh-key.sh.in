@@ -9,8 +9,6 @@
 ### END INIT INFO
 
 start() {
-  # Start the attested TLS reverse proxy server
-  start_proxy
 
   echo "Starting searcher-ssh-key script"
   # Add searcher user
