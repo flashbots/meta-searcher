@@ -1,1 +1,1 @@
-PACKAGE_INSTALL:append = " searcher-ssh-key ssh-pubkey-server su-restriction disk-encryption"
+PACKAGE_INSTALL:append = " dropbear searcher-ssh-key ssh-pubkey-server su-restriction disk-encryption"
