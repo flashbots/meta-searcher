@@ -2,3 +2,7 @@
 # -w: Disallow root logins
 # -g: Disable password logins for root
 DROPBEAR_EXTRA_ARGS="-s -w -g"
+DROPBEAR_RECEIVE_WINDOW=65536
+
+# SFTP configuration
+DROPBEAR_SUBSYSTEM="sftp /usr/libexec/sftp-server"
