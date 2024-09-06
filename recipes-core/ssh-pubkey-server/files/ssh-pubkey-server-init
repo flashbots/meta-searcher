@@ -33,6 +33,9 @@ start() {
   # Start the attested TLS reverse proxy server
   start_proxy
 
+  # Generate dropbear host public key to share upon attestation
+  dropbearkey -y -f /etc/dropbear/dropbear_rsa_host_key | grep -m 1 "^ssh-rsa " > /etc/dropbear/dropbear_rsa_host_key.pub
+  
   echo "Starting $DESC: "
   start-stop-daemon -S -p $PIDFILE -N -10 -b -a /bin/sh -- -c "exec $DAEMON $DAEMON_ARGS 2>&1 | tee -a $LOGFILE"
   echo "$NAME."
