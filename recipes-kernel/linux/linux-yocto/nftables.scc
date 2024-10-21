@@ -1,3 +1,4 @@
-define KFEATURE_DESCRIPTION "Enabling kernal configs for nftables"
+define KFEATURE_DESCRIPTION "Add extra nftables modules"
+define KFEATURE_COMPATIBILITY all
 
-kconf hardware nftables.cfg
+kconf non-hardware nftables.cfg
