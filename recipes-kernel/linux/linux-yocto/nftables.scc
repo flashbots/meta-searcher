@@ -1,0 +1,3 @@
+define KFEATURE_DESCRIPTION "Enabling kernal configs for nftables"
+
+kconf hardware nftables.cfg

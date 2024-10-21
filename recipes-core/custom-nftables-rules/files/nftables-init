@@ -1,0 +1,36 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          nftables
+# Required-Start:    $network
+# Required-Stop:     $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start nftables firewall
+### END INIT INFO
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+
+case "$1" in
+  start)
+    echo "Starting nftables firewall"
+    nft -f /etc/nftables.conf
+    ;;
+  stop)
+    echo "Stopping nftables firewall"
+    nft flush ruleset
+    ;;
+  restart)
+    $0 stop
+    $0 start
+    ;;
+  status)
+    echo "nftables rules:"
+    nft list ruleset
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}"
+    exit 1
+    ;;
+esac
+
+exit 0
