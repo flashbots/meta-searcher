@@ -1,7 +1,7 @@
 # -s: Disallow password logins by default
 # -w: Disallow root logins
 # -g: Disable password logins for root
-DROPBEAR_EXTRA_ARGS="-s -w -g"
+DROPBEAR_EXTRA_ARGS="-s -w -g -K 30 -c /usr/bin/shell-wrapper"
 DROPBEAR_RECEIVE_WINDOW=65536
 
 # SFTP configuration

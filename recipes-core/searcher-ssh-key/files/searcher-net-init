@@ -18,6 +18,12 @@ create_directories() {
     mkdir -p /run/netns
     mkdir -p "$(dirname "$LOG_FILE")"
     mkdir -p "$(dirname "$STATE_FILE")"
+
+    # Ensure mode state file exists
+    if [ ! -f /run/system-mode.state ]; then
+        echo "maintenance" > /run/system-mode.state
+        chmod 644 /run/system-mode.state
+    fi
 }
 
 log() {
