@@ -1,0 +1,258 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          searcher-net
+# Required-Start:    $network nftables
+# Required-Stop:     $network nftables
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Setup searcher network isolation
+### END INIT INFO
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+LOG_FILE="/var/log/searcher-net.log"
+STATE_FILE="/run/searcher-net.state"
+NAMESPACE="searcher-ns"
+
+# Create necessary runtime directories
+create_directories() {
+    mkdir -p /run/netns
+    mkdir -p "$(dirname "$LOG_FILE")"
+    mkdir -p "$(dirname "$STATE_FILE")"
+
+    # Ensure mode state file exists
+    if [ ! -f /run/system-mode.state ]; then
+        echo "maintenance" > /run/system-mode.state
+        chmod 644 /run/system-mode.state
+    fi
+}
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+log_cmd() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Running: $*" >> "$LOG_FILE"
+    $* 2>&1 | tee -a "$LOG_FILE"
+    ret=$?
+    if [ $ret -ne 0 ]; then
+        log "Command failed with exit code $ret"
+        return $ret
+    fi
+    return 0
+}
+
+debug_network_state() {
+    log "=== Debug Network State ==="
+    log "Current interfaces:"
+    ip link show | tee -a "$LOG_FILE"
+    log "IP addresses:"
+    ip addr show | tee -a "$LOG_FILE"
+    log "NAT rules:"
+    iptables -t nat -L POSTROUTING -n -v | tee -a "$LOG_FILE"
+    log "IP forwarding state:"
+    cat /proc/sys/net/ipv4/ip_forward | tee -a "$LOG_FILE"
+    log "Routing table:"
+    ip route | tee -a "$LOG_FILE"
+    log "nftables rules:"
+    nft list ruleset | tee -a "$LOG_FILE"
+    log "======================="
+}
+
+aggressive_cleanup() {
+    log "Starting aggressive cleanup..."
+
+    # Reset IP forwarding
+    echo 0 > /proc/sys/net/ipv4/ip_forward
+    
+    # Clear NAT rules
+    iptables -t nat -F
+    iptables -t nat -X
+
+    # List all interfaces before cleanup
+    log "Interfaces before cleanup:"
+    ip link show | tee -a "$LOG_FILE"
+
+    # Delete namespace if exists
+    if ip netns show | grep -q "$NAMESPACE"; then
+        log "Deleting network namespace $NAMESPACE"
+        ip netns delete "$NAMESPACE"
+    fi
+
+    # Remove all virtual interfaces
+    for iface in $(ip link show | grep -E '@|veth' | cut -d: -f2 | cut -d@ -f1 | tr -d ' '); do
+        log "Removing interface $iface"
+        ip link set "$iface" down 2>/dev/null || true
+        ip link delete "$iface" 2>/dev/null || true
+    done
+
+    # Remove state file
+    rm -f "$STATE_FILE" 2>/dev/null
+
+    # Wait for cleanup to complete
+    sleep 2
+    sync
+
+    # Verify cleanup
+    log "Interfaces after cleanup:"
+    ip link show | tee -a "$LOG_FILE"
+}
+
+setup_namespace() {
+    # Make sure the namespace exists
+    if ! ip netns add "$NAMESPACE"; then
+        log "Failed to create network namespace"
+        return 1
+    fi
+
+    # Set up loopback interface in namespace
+    if ! ip netns exec "$NAMESPACE" ip link set lo up; then
+        log "Failed to bring up loopback interface in namespace"
+        return 1
+    fi
+
+    # Move veth1 into the namespace
+    log "Moving veth1 to namespace $NAMESPACE"
+    if ! ip link set veth1 netns "$NAMESPACE"; then
+        log "Failed to move veth1 to namespace"
+        return 1
+    fi
+
+    # Configure veth1 inside the namespace
+    log "Configuring veth1 in namespace $NAMESPACE..."
+    if ! ip netns exec "$NAMESPACE" ip addr add 10.0.0.2/24 dev veth1; then
+        log "Failed to configure veth1"
+        return 1
+    fi
+    if ! ip netns exec "$NAMESPACE" ip link set veth1 up; then
+        log "Failed to bring up veth1"
+        return 1
+    fi
+
+    # Now add the default route
+    if ! ip netns exec "$NAMESPACE" ip route add default via 10.0.0.1; then
+        log "Failed to add default route in namespace"
+        return 1
+    fi
+
+    # Set up DNS in namespace
+    mkdir -p /etc/netns/$NAMESPACE
+    echo "nameserver 8.8.8.8" > /etc/netns/$NAMESPACE/resolv.conf
+
+    return 0
+}
+
+create_network() {
+    touch "$LOG_FILE"
+    chmod 644 "$LOG_FILE"
+    
+    log "Starting network setup"
+    debug_network_state
+
+    # Make sure required directories exist
+    create_directories
+    
+    # Thorough cleanup first
+    aggressive_cleanup
+    
+    # Create the veth pair with fixed names
+    log "Creating veth pair..."
+    if ! log_cmd ip link add veth0 type veth peer name veth1; then
+        log "Failed to create veth pair"
+        return 1
+    fi
+
+    # Configure veth0 in the root namespace
+    log "Configuring veth0 in root namespace..."
+    if ! log_cmd ip addr add 10.0.0.1/24 dev veth0; then
+        log "Failed to configure veth0"
+        return 1
+    fi
+    if ! log_cmd ip link set veth0 up; then
+        log "Failed to bring up veth0"
+        return 1
+    fi
+
+    # Create and set up the network namespace
+    log "Creating network namespace $NAMESPACE"
+    if ! setup_namespace; then
+        log "Failed to set up namespace"
+        return 1
+    fi
+
+    # Enable NAT for the network namespace
+    log "Setting up NAT..."
+    if ! log_cmd iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -o eth0 -j MASQUERADE; then
+        log "Failed to set up NAT"
+        return 1
+    fi
+
+    # Enable IP forwarding
+    log "Enabling IP forwarding..."
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+
+    # Save the state
+    echo "NAMESPACE=$NAMESPACE" > "$STATE_FILE"
+
+    # Final verification
+    debug_network_state
+
+    # Test connectivity from namespace
+    log "Testing connectivity from namespace..."
+    if ! ip netns exec "$NAMESPACE" ping -c 1 -W 1 10.0.0.1 >/dev/null 2>&1; then
+        log "Network connectivity test failed"
+        return 1
+    fi
+    
+    log "Network setup completed successfully"
+    return 0
+}
+
+case "$1" in
+    start)
+        create_directories
+        log "=== Starting searcher network isolation ==="
+        if create_network; then
+            log "Network setup successful"
+            exit 0
+        else
+            log "Network setup failed"
+            aggressive_cleanup
+            exit 1
+        fi
+        ;;
+    stop)
+        log "=== Stopping searcher network isolation ==="
+        aggressive_cleanup
+        log "Network cleanup completed"
+        ;;
+    restart|force-reload)
+        log "=== Restarting searcher network isolation ==="
+        aggressive_cleanup
+        sleep 2
+        if create_network; then
+            log "Network restart successful"
+            exit 0
+        else
+            log "Network restart failed"
+            exit 1
+        fi
+        ;;
+    status)
+        log "=== Checking searcher network status ==="
+        debug_network_state
+        if [ -f "$STATE_FILE" ]; then
+            if ip netns show | grep -q "$NAMESPACE"; then
+                log "Network namespace $NAMESPACE exists and is running"
+                exit 0
+            fi
+        fi
+        log "Network is not configured"
+        exit 1
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|force-reload|status}"
+        exit 1
+        ;;
+esac
+
+exit 0
