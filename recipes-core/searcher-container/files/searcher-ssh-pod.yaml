@@ -1,0 +1,48 @@
+# Pod configuration for SSH server container
+apiVersion: v1
+kind: Pod
+metadata:
+  name: searcher-ssh-pod
+  labels:
+    app: ssh-server
+spec:
+  containers:
+    - name: searcher-ssh
+      image: docker.io/ubuntu:24.04
+      ports:
+        - containerPort: 22
+          hostPort: 10022
+          protocol: TCP
+      volumeMounts:
+        - name: ssh-key-volume
+          mountPath: /container_auth_keys
+          readOnly: true
+        - name: persistent-volume
+          mountPath: /persistent
+      command: ["/bin/sh"]
+      args:
+        - "-c"
+        - |
+          DEBIAN_FRONTEND=noninteractive apt-get update && \
+          DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server && \
+          mkdir -p /run/sshd && \
+          mkdir -p /root/.ssh && \
+          cp /container_auth_keys /root/.ssh/authorized_keys && \
+          chmod 700 /root/.ssh && \
+          chmod 600 /root/.ssh/authorized_keys && \
+          /usr/sbin/sshd -D -e
+  volumes:
+    - name: ssh-key-volume
+      hostPath:
+        path: /etc/searcher_key
+        type: File
+    - name: persistent-volume
+      hostPath:
+        path: /persistent
+        type: Directory
+  restartPolicy: Always
+  # Using vfs storage driver
+  runtimeConfig:
+    storage:
+      driver: vfs
+
