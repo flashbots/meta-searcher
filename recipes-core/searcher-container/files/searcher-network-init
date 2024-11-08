@@ -1,0 +1,173 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          searcher-network
+# Required-Start:    $network
+# Required-Stop:     $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Searcher Network Configuration
+# Description:       Sets up podman networks and iptables rules for searcher containers
+### END INIT INFO
+
+# Configuration variables
+BUILDER_HOST=0.0.0.0
+BUILDER_STATE_DIFF_PORT=8547
+BUILDER_RPC_PORT=8645
+BUILDER_CL_PORT=9000
+BUILDER_SEARCHER_INPUT_PORT=27017
+BUILDER_EL_PORT=30303
+PODMAN="/usr/bin/podman"
+IPTABLES="/usr/sbin/iptables"
+
+# Network interface name
+MAINTENANCE_INTERFACE="maintenance0"
+ALWAYS_INTERFACE="always0"
+PRODUCTION_INTERFACE="production0"
+
+# Network CIDR ranges
+MAINTENANCE_SUBNET="10.90.0.0/24"
+ALWAYS_SUBNET="10.90.1.0/24"
+PRODUCTION_SUBNET="10.90.2.0/24"
+
+# Execute a command in the searcher's rootless netns context
+in_netns() {
+    su -s /bin/sh - searcher -c "podman unshare --rootless-netns $*"
+}
+
+# Network setup functions
+setup_maintenance_network() {
+    echo "Setting up maintenance network..."
+    in_netns "$PODMAN network create \
+        --interface-name ${MAINTENANCE_INTERFACE} \
+        --subnet ${MAINTENANCE_SUBNET} \
+        --gateway 10.90.0.1 \
+        maintenance" || return 1
+}
+
+setup_maintenance_firewall() {
+    # Block state diff traffic for maintenance subnet
+    in_netns "$IPTABLES -I FORWARD 1 -i ${MAINTENANCE_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${BUILDER_STATE_DIFF_PORT} -j DROP"
+    in_netns "$IPTABLES -I FORWARD 1 -o ${MAINTENANCE_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${BUILDER_STATE_DIFF_PORT} -j DROP"
+    return 0
+}
+
+setup_always_network() {
+    echo "Setting up always network..."
+    in_netns "$PODMAN network create \
+        --interface-name ${ALWAYS_INTERFACE} \
+        --subnet ${ALWAYS_SUBNET} \
+        --gateway 10.90.1.1 \
+        always" || return 1
+}
+
+setup_always_firewall() {
+    # Default DROP for always subnet
+    in_netns "$IPTABLES -I FORWARD 1 -i ${ALWAYS_INTERFACE} -j DROP"
+    in_netns "$IPTABLES -I FORWARD 1 -o ${ALWAYS_INTERFACE} -j DROP"
+    in_netns "$IPTABLES -I INPUT 1 -i ${ALWAYS_INTERFACE} -j DROP"
+    in_netns "$IPTABLES -I OUTPUT 1 -o ${ALWAYS_INTERFACE} -j DROP"
+    
+    # Allow Builder traffic for specific ports
+    for port in "${BUILDER_RPC_PORT}" "${BUILDER_CL_PORT}" "${BUILDER_SEARCHER_INPUT_PORT}" "${BUILDER_EL_PORT}"; do
+        in_netns "$IPTABLES -I FORWARD 1 -i ${ALWAYS_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${port} -j ACCEPT"
+        in_netns "$IPTABLES -I FORWARD 1 -o ${ALWAYS_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${port} -j ACCEPT"
+    done
+    return 0
+}
+
+setup_production_network() {
+    echo "Setting up production network..."
+    in_netns "$PODMAN network create \
+        --interface-name ${PRODUCTION_INTERFACE} \
+        --subnet ${PRODUCTION_SUBNET} \
+        --gateway 10.90.2.1 \
+        production" || return 1
+}
+
+setup_production_firewall() {
+    # Default DROP for production subnet
+    in_netns "$IPTABLES -I FORWARD 1 -i ${PRODUCTION_INTERFACE} -j DROP"
+    in_netns "$IPTABLES -I FORWARD 1 -o ${PRODUCTION_INTERFACE} -j DROP"
+    in_netns "$IPTABLES -I INPUT 1 -i ${PRODUCTION_INTERFACE} -j DROP"
+    in_netns "$IPTABLES -I OUTPUT 1 -o ${PRODUCTION_INTERFACE} -j DROP"
+    
+    # Allow Builder state diff traffic only
+    in_netns "$IPTABLES -I FORWARD 1 -i ${PRODUCTION_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
+    in_netns "$IPTABLES -I FORWARD 1 -o ${PRODUCTION_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
+    return 0
+}
+
+start_infra_container() {
+    in_netns "$PODMAN run -d --name searcher-network-infra --restart always --network always k8s.gcr.io/pause"
+}
+
+case "$1" in
+    start)
+        echo "Setting up searcher networks..."
+        if setup_maintenance_network && \
+           setup_always_network && \
+           setup_production_network && \
+	   start_infra_container && \
+           setup_maintenance_firewall && \
+           setup_always_firewall && \
+           setup_production_firewall; then
+            echo "Searcher networks setup completed successfully"
+            exit 0
+        else
+            echo "Failed to setup searcher networks"
+            exit 1
+        fi
+        ;;
+    start_production)
+        if [ -z "$2" ]; then
+            echo "Error: Container ID required"
+            echo "Usage: $0 start_production <container_id>"
+            exit 1
+        fi
+        echo "Moving container $2 to production network..."
+        if in_netns "$PODMAN network disconnect maintenance $2" && \
+           in_netns "$PODMAN network connect production $2"; then
+            echo "Container successfully moved to production network"
+            exit 0
+        else
+            echo "Failed to move container to production network"
+            exit 1
+        fi
+        ;;
+    stop_production)
+        if [ -z "$2" ]; then
+            echo "Error: Container ID required"
+            echo "Usage: $0 stop_production <container_id>"
+            exit 1
+        fi
+        echo "Disconnecting container $2 from production network..."
+        if in_netns "$PODMAN network disconnect production $2"; then
+            echo "Container successfully disconnected from production network"
+            exit 0
+        else
+            echo "Failed to disconnect container from production network"
+            exit 1
+        fi
+        ;;
+    start_maintenance)
+        if [ -z "$2" ]; then
+            echo "Error: Container ID required"
+            echo "Usage: $0 start_maintenance <container_id>"
+            exit 1
+        fi
+        echo "Connecting container $2 to maintenance network..."
+        if in_netns "$PODMAN network connect maintenance $2"; then
+            echo "Container successfully connected to maintenance network"
+            exit 0
+        else
+            echo "Failed to connect container to maintenance network"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|start_production <container_id>|stop_production <container_id>|start_maintenance <container_id>}"
+        exit 1
+        ;;
+esac
+
+exit 0

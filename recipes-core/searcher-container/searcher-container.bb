@@ -11,12 +11,21 @@ SRC_URI = " \
     file://production.conflist \
     file://searcher-ssh-pod.yaml \
     file://searcher-pod-init \
+    file://searcher-network-init \
 "
 
-INITSCRIPT_NAME = "searcher-pod"
-INITSCRIPT_PARAMS = "defaults 99"
+# Create separate package for network setup
+PACKAGES =+ "${PN}-network"
 
-RDEPENDS:${PN} = "podman catatonit modutils-initscripts iproute2 bridge-utils ebtables"
+# Init script configuration
+INITSCRIPT_PACKAGES = "${PN} ${PN}-network"
+INITSCRIPT_NAME:${PN} = "searcher-pod"
+INITSCRIPT_PARAMS:${PN} = "defaults 99"
+INITSCRIPT_NAME:${PN}-network = "searcher-network"
+INITSCRIPT_PARAMS:${PN}-network = "defaults 98"
+
+RDEPENDS:${PN} = "podman netavark catatonit modutils-initscripts iproute2 bridge-utils kernel-modules"
+RDEPENDS:${PN}-network = "iptables"
 
 # User/Group creation parameters
 USERADD_PACKAGES = "${PN}"
@@ -45,9 +54,10 @@ do_install() {
     install -d ${D}/home/searcher/pod-config
     install -m 0644 ${WORKDIR}/searcher-ssh-pod.yaml ${D}/home/searcher/pod-config/
 
-    # Install init script
+    # Install init scripts
     install -d ${D}${sysconfdir}/init.d
     install -m 0755 ${WORKDIR}/searcher-pod-init ${D}${sysconfdir}/init.d/searcher-pod
+    install -m 0755 ${WORKDIR}/searcher-network-init ${D}${sysconfdir}/init.d/searcher-network
 
     # Install CNI network configurations for searcher user
     install -d ${D}/home/searcher/.config/cni/net.d
@@ -70,4 +80,8 @@ FILES:${PN} = " \
     /etc/init.d/searcher-pod \
     /persistent \
     /etc/searcher_key \
+"
+
+FILES:${PN}-network = " \
+    /etc/init.d/searcher-network \
 "
