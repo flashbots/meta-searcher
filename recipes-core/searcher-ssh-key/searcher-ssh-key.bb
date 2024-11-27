@@ -8,25 +8,15 @@ inherit useradd
 USERADD_PACKAGES = "${PN}"
 USERADD_PARAM:${PN} = "-m -d /home/searcher -s /bin/sh -u 1000 searcher"
 
-python () {
-    # Check if SEARCHER_SSH_KEY is set in the environment or in local.conf
-    searcher_ssh_key = d.getVar('SEARCHER_SSH_KEY')
-    
-    if searcher_ssh_key is None:
-        # If not set, check the original environment
-        origenv = d.getVar("BB_ORIGENV", False)
-        if origenv:
-            searcher_ssh_key = origenv.getVar('SEARCHER_SSH_KEY')
-    
-    if searcher_ssh_key:
-        # If SEARCHER_SSH_KEY is set, keep its value
-        d.setVar('SEARCHER_SSH_KEY', searcher_ssh_key)
-    else:
-        # If SEARCHER_SSH_KEY is not set, raise an error
-        bb.fatal("SEARCHER_SSH_KEY must be set. Please provide an SSH public key.")
-}
+export SEARCHER_SSH_KEY := "${SEARCHER_SSH_KEY}"
+do_install[vardeps] += "SEARCHER_SSH_KEY"
 
 do_install () {
+    if [ -z "${SEARCHER_SSH_KEY}" ]; then
+        echo "ERROR: SEARCHER_SSH_KEY is not set"
+        return 1
+    fi
+
     install -d ${D}/home/searcher/.ssh
     echo "${SEARCHER_SSH_KEY}" > ${D}/home/searcher/.ssh/authorized_keys
     chmod 700 ${D}/home/searcher/.ssh
