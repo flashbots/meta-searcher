@@ -1,5 +1,4 @@
-SUMMARY = "CNI Network Configurations"
-DESCRIPTION = "Sets up CNI network configurations for maintenance and production networks"
+SUMMARY = "Seacher and Searcher Network Configurations"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
@@ -7,11 +6,11 @@ inherit update-rc.d
 inherit useradd
 
 SRC_URI = " \
-    file://maintenance.conflist \
-    file://production.conflist \
     file://searcher-ssh-pod.yaml \
     file://searcher-pod-init \
     file://searcher-network-init \
+    file://toggle \
+    file://searchersh.c \
 "
 
 # Create separate package for network setup
@@ -24,12 +23,12 @@ INITSCRIPT_PARAMS:${PN} = "defaults 99"
 INITSCRIPT_NAME:${PN}-network = "searcher-network"
 INITSCRIPT_PARAMS:${PN}-network = "defaults 98"
 
-RDEPENDS:${PN} = "podman netavark catatonit modutils-initscripts iproute2 bridge-utils kernel-modules"
-RDEPENDS:${PN}-network = "iptables"
+RDEPENDS:${PN} = "podman catatonit modutils-initscripts kernel-modules"
+RDEPENDS:${PN}-network = "iptables netavark socat"
 
 # User/Group creation parameters
 USERADD_PACKAGES = "${PN}"
-USERADD_PARAM:${PN} = "-m -d /home/searcher -s /sbin/nologin -u 1000 searcher"
+USERADD_PARAM:${PN} = "-m -d /home/searcher -s /usr/bin/searchersh -u 1000 searcher"
 
 python () {
     # Check if SEARCHER_SSH_KEY is set in the environment or in local.conf
@@ -49,6 +48,10 @@ python () {
         bb.fatal("SEARCHER_SSH_KEY must be set. Please provide an SSH public key.")
 }
 
+do_compile() {
+    ${CC} ${WORKDIR}/searchersh.c ${LDFLAGS} -o ${WORKDIR}/searchersh
+}
+
 do_install() {
     # Install pod configuration
     install -d ${D}/home/searcher/pod-config
@@ -59,29 +62,45 @@ do_install() {
     install -m 0755 ${WORKDIR}/searcher-pod-init ${D}${sysconfdir}/init.d/searcher-pod
     install -m 0755 ${WORKDIR}/searcher-network-init ${D}${sysconfdir}/init.d/searcher-network
 
-    # Install CNI network configurations for searcher user
-    install -d ${D}/home/searcher/.config/cni/net.d
-    install -m 0644 ${WORKDIR}/maintenance.conflist ${D}/home/searcher/.config/cni/net.d/maintenance.conflist
-    install -m 0644 ${WORKDIR}/production.conflist ${D}/home/searcher/.config/cni/net.d/production.conflist
-
-    # Ensure proper ownership
-    chown -R searcher:searcher ${D}/home/searcher
+    # Install searcher shell and toggle script
+    install -d ${D}${bindir}
+    install -m 0755 ${WORKDIR}/searchersh ${D}${bindir}
+    install -m 0755 ${WORKDIR}/toggle ${D}${bindir}
 
     # Create persistent directory
     install -d ${D}/persistent
 
     # Add searcher ssh key
     echo "${SEARCHER_SSH_KEY}" > ${D}/etc/searcher_key
+
+    install -d ${D}/home/searcher/.ssh
+    echo "${SEARCHER_SSH_KEY}" > ${D}/home/searcher/.ssh/authorized_keys
+    chmod 700 ${D}/home/searcher/.ssh
+    chmod 600 ${D}/home/searcher/.ssh/authorized_keys
+    chown -R 1000:1000 ${D}/home/searcher
+}
+
+pkg_postinst:${PN} () {
+        grep -q "^/usr/bin/searchersh$" $D${sysconfdir}/shells || echo /usr/bin/searchersh >> $D${sysconfdir}/shells
+}
+
+pkg_postrm:${PN} () {
+        printf "$(grep -v "^/usr/bin/searchersh$" $D${sysconfdir}/shells)\n" > $D${sysconfdir}/shells
 }
 
 FILES:${PN} = " \
+    /home/searcher \
     /home/searcher/.config/cni/net.d/* \
     /home/searcher/pod-config/searcher-ssh-pod.yaml \
     /etc/init.d/searcher-pod \
     /persistent \
     /etc/searcher_key \
+    /home/searcher/.ssh \
+    /home/searcher/.ssh/authorized_keys \
 "
 
 FILES:${PN}-network = " \
     /etc/init.d/searcher-network \
+    /usr/bin/searchersh \
+    /usr/bin/toggle \
 "

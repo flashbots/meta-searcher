@@ -1,0 +1,180 @@
+#!/bin/sh
+
+LOCK_FILE="/tmp/searcher-network.lock"
+STATE_FILE="/tmp/searcher-network.state"
+TIMESTAMP_FILE="/tmp/searcher-network-last-stop.timestamp"
+
+PODMAN="/usr/bin/podman"
+MAINTENANCE_INTERFACE="maintenance0"
+ALWAYS_INTERFACE="always0"
+PRODUCTION_INTERFACE="production0"
+
+with_lock() {
+    (
+        flock -x 200
+        "$@"
+    ) 200>"$LOCK_FILE"
+}
+
+get_state() {
+    if [ ! -f "$STATE_FILE" ]; then
+        echo "maintenance"  # Default state
+    else
+        cat "$STATE_FILE"
+    fi
+}
+
+set_state() {
+    echo "$1" > "$STATE_FILE"
+}
+
+write_timestamp() {
+    date +%s > "$TIMESTAMP_FILE"
+}
+
+check_delay() {
+    if [ ! -f "$TIMESTAMP_FILE" ]; then
+        echo "Error: No previous stop_production timestamp found"
+        return 1
+    fi
+    
+    last_stop=$(cat "$TIMESTAMP_FILE")
+    current_time=$(date +%s)
+    delay_seconds=120  # 2 minutes
+    
+    if [ $((current_time - last_stop)) -lt $delay_seconds ]; then
+        remaining=$((delay_seconds - (current_time - last_stop)))
+        echo "Error: Must wait $remaining more seconds before starting maintenance"
+        return 1
+    fi
+    return 0
+}
+
+as_searcher() {
+    if [ "$(id -un)" = "searcher" ]; then
+        # Already running as searcher user, execute directly
+        eval "$1"
+    else
+        # Need to switch to searcher user
+        su -s /bin/sh - searcher -c "$1"
+    fi
+}
+
+in_netns() {
+    as_searcher "podman unshare --rootless-netns sh -c \"$1\""
+}
+
+move_to_production() {
+    CONTAINER_NAME=$(as_searcher "podman pod inspect searcher-ssh-pod" | grep '"Name":' | grep '\-infra"' | cut -d'"' -f4)
+    if [ -z "$CONTAINER_NAME" ]; then
+        echo "Error: Failed to get container name"
+        return 1
+    fi
+    if [ "$(get_state)" != "maintenance" ]; then
+        echo "Error: Can only move to production from maintenance state"
+        return 1
+    fi
+    echo "Moving container $CONTAINER_NAME to production network..."
+    if as_searcher "$PODMAN network disconnect maintenance $CONTAINER_NAME" && \
+       in_netns "$PODMAN network connect production $CONTAINER_NAME" && \
+       in_netns "echo 0 > /proc/sys/net/ipv4/conf/${MAINTENANCE_INTERFACE}/forwarding" && \
+       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${ALWAYS_INTERFACE}/forwarding" && \
+       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${PRODUCTION_INTERFACE}/forwarding"; then
+        set_state "production"
+        echo "Container successfully moved to production network"
+        return 0
+    else
+        echo "Failed to move container to production network"
+        return 1
+    fi
+}
+
+disconnect_from_production() {
+    write_timestamp
+    CONTAINER_NAME=$(as_searcher "podman pod inspect searcher-ssh-pod" | grep '"Name":' | grep '\-infra"' | cut -d'"' -f4)
+    if [ -z "$CONTAINER_NAME" ]; then
+        echo "Error: Failed to get container name"
+        return 1
+    fi
+    if [ "$(get_state)" != "production" ]; then
+        echo "Error: Can only disconnect from production state"
+        return 1
+    fi
+    echo "Disconnecting container $CONTAINER_NAME from production network..."
+    if as_searcher "$PODMAN network disconnect production $CONTAINER_NAME" && \
+       in_netns "echo 0 > /proc/sys/net/ipv4/conf/${MAINTENANCE_INTERFACE}/forwarding" && \
+       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${ALWAYS_INTERFACE}/forwarding" && \
+       in_netns "echo 0 > /proc/sys/net/ipv4/conf/${PRODUCTION_INTERFACE}/forwarding"; then
+        set_state "stopped"
+        echo "Container successfully disconnected from production network"
+        return 0
+    else
+        echo "Failed to disconnect container from production network"
+        return 1
+    fi
+}
+
+connect_to_maintenance() {
+    CONTAINER_NAME=$(as_searcher "podman pod inspect searcher-ssh-pod" | grep '"Name":' | grep '\-infra"' | cut -d'"' -f4)
+    if [ -z "$CONTAINER_NAME" ]; then
+        echo "Error: Failed to get container name"
+        return 1
+    fi
+    if [ "$(get_state)" != "stopped" ]; then
+        echo "Error: Can only connect to maintenance from stopped state"
+        return 1
+    fi
+    if ! check_delay; then
+        return 1
+    fi
+    echo "Connecting container $CONTAINER_NAME to maintenance network..."
+    if as_searcher "$PODMAN network connect maintenance $CONTAINER_NAME" && \
+       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${MAINTENANCE_INTERFACE}/forwarding" && \
+       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${ALWAYS_INTERFACE}/forwarding" && \
+       in_netns "echo 0 > /proc/sys/net/ipv4/conf/${PRODUCTION_INTERFACE}/forwarding"; then
+        set_state "maintenance"
+        rm -f "$TIMESTAMP_FILE"  # Clear timestamp after successful use
+        echo "Container successfully connected to maintenance network"
+        return 0
+    else
+        echo "Failed to connect container to maintenance network"
+        return 1
+    fi
+}
+
+toggle() {
+    current_state=$(get_state)
+    case "$current_state" in
+        "production")
+            echo "Switching from production to stopped..."
+            disconnect_from_production
+            result=$?
+            ;;
+        "stopped")
+            echo "Switching from stopped to maintenance..."
+            connect_to_maintenance
+            result=$?
+            ;;
+        "maintenance")
+            echo "Switching from maintenance to production..."
+            move_to_production
+            result=$?
+            ;;
+        *)
+            echo "Error: Unknown state: $current_state"
+            return 1
+            ;;
+    esac
+    if [ $result -eq 0 ]; then
+        echo "Successfully switched state"
+        return 0
+    else
+        echo "Failed to switch state"
+        return 1
+    fi
+}
+
+# Main execution
+with_lock toggle
+exit $?
+
