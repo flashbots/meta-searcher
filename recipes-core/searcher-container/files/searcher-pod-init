@@ -21,7 +21,7 @@ POD_NAME=searcher-ssh-pod
 case "$1" in
     start)
         echo "Starting $NAME..."
-        su -s /bin/sh $USER -c "cd ~ && $DAEMON play kube --network maintenance,always $POD_CONFIG"
+        su -s /bin/sh $USER -c "cd ~ && $DAEMON play kube --network maintenance $POD_CONFIG"
         ;;
     stop)
         echo "Stopping $NAME..."

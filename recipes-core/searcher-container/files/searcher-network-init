@@ -128,6 +128,12 @@ setup_production_firewall() {
     in_netns "$IPTABLES -I FORWARD 1 -i ${PRODUCTION_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
     in_netns "$IPTABLES -I FORWARD 1 -o ${PRODUCTION_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
     
+    # Allow Builder traffic for specific ports (replaces always network)
+    for port in "${BUILDER_RPC_PORT}" "${BUILDER_CL_PORT}" "${BUILDER_SEARCHER_INPUT_PORT}" "${BUILDER_EL_PORT}"; do
+        in_netns "$IPTABLES -I FORWARD 1 -i ${PRODUCTION_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${port} -j ACCEPT"
+        in_netns "$IPTABLES -I FORWARD 1 -o ${PRODUCTION_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${port} -j ACCEPT"
+    done
+
     # Then, switch to NAT table to add masquerading rules
     # First create a unique chain for the new network
     in_netns "$IPTABLES -t nat -N NETAVARK-PROD0CHAIN"
@@ -197,6 +203,12 @@ cleanup_production_firewall() {
     # Remove Builder state diff traffic rules
     in_netns "$IPTABLES -D FORWARD -i ${PRODUCTION_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
     in_netns "$IPTABLES -D FORWARD -o ${PRODUCTION_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
+
+    # Remove Builder traffic rules for specific ports (replaces always network)
+    for port in "${BUILDER_RPC_PORT}" "${BUILDER_CL_PORT}" "${BUILDER_SEARCHER_INPUT_PORT}" "${BUILDER_EL_PORT}"; do
+        in_netns "$IPTABLES -D FORWARD -i ${ALWAYS_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${port} -j ACCEPT"
+        in_netns "$IPTABLES -D FORWARD -o ${ALWAYS_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${port} -j ACCEPT"
+    done
 
     # Clean up NAT rules
     in_netns "$IPTABLES -t nat -D POSTROUTING -s ${PRODUCTION_SUBNET} -j NETAVARK-PROD0CHAIN"
