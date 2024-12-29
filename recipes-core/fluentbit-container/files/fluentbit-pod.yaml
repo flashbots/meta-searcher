@@ -1,0 +1,32 @@
+# Pod configuration for SSH server container
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fluentbit-pod
+  labels:
+    app: fluentbit
+spec:
+  containers:
+    - name: fluentbit
+      image: docker.io/fluent/fluent-bit:latest
+      volumeMounts:
+        - name: logs-volume
+          mountPath: /var/log/searcher
+      command: ["/bin/sh"]
+      args:
+        - "-c"
+        - |
+          ls -lah > /var/log/searcher/test1 \
+          /fluent-bit/bin/fluent-bit --version -o /var/log/searcher/fb_logs2 -l /var/log/searcher/fb_logs  \
+          # -i forward -o stdout -p format=json_lines -f 1
+  volumes:
+    - name: logs-volume
+      hostPath:
+        path: /var/log/searcher
+        type: Directory
+  restartPolicy: Always
+  # Using vfs storage driver
+  runtimeConfig:
+    storage:
+      driver: vfs
+
