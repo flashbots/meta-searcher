@@ -70,6 +70,10 @@ do_install() {
     # Create persistent directory
     install -d ${D}/persistent
 
+    # Create logs directory
+    install -d ${D}/searcher_logs
+    # TODO: add noexec and other flags to mount
+
     # Add searcher ssh key
     echo "${SEARCHER_SSH_KEY}" > ${D}/etc/searcher_key
 
@@ -97,6 +101,7 @@ FILES:${PN} = " \
     /etc/searcher_key \
     /home/searcher/.ssh \
     /home/searcher/.ssh/authorized_keys \
+    /searcher_logs \
 "
 
 FILES:${PN}-network = " \

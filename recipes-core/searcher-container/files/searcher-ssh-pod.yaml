@@ -19,6 +19,8 @@ spec:
           readOnly: true
         - name: persistent-volume
           mountPath: /persistent
+        - name: logs-volume
+          mountPath: /var/log/searcher
       command: ["/bin/sh"]
       args:
         - "-c"
@@ -39,6 +41,10 @@ spec:
     - name: persistent-volume
       hostPath:
         path: /persistent
+        type: Directory
+    - name: logs-volume
+      hostPath:
+        path: /searcher_logs
         type: Directory
   restartPolicy: Always
   # Using vfs storage driver
