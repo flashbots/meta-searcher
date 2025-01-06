@@ -11,7 +11,7 @@ int main(int argc, char *argv[]) {
     const char *command = argv[2];
 
     if (strcmp(command, "toggle") == 0) {
-        execl("/bin/sh", "sh", "-c", "toggle", NULL);
+        execl("/usr/bin/sudo", "sudo", "-S", "/usr/bin/toggle", NULL);
         perror("execl failed");
         return 1;
     }
@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     else if (strcmp(command, "failsafe") == 0) {
-        execl("/bin/sh", "sh", "-c", "podman pod rm -f searcher-ssh-pod", NULL);
+        execl("/bin/sh", "sh", "-c", "podman rm -f searcher-container", NULL);
         perror("execl failed");
         return 1;
     }

@@ -6,11 +6,11 @@ inherit update-rc.d
 inherit useradd
 
 SRC_URI = " \
-    file://searcher-ssh-pod.yaml \
     file://searcher-pod-init \
     file://searcher-network-init \
     file://toggle \
     file://searchersh.c \
+    file://99-searcher \
 "
 
 # Create separate package for network setup
@@ -19,12 +19,12 @@ PACKAGES =+ "${PN}-network"
 # Init script configuration
 INITSCRIPT_PACKAGES = "${PN} ${PN}-network"
 INITSCRIPT_NAME:${PN} = "searcher-pod"
-INITSCRIPT_PARAMS:${PN} = "defaults 99"
+INITSCRIPT_PARAMS:${PN} = "defaults 98"
 INITSCRIPT_NAME:${PN}-network = "searcher-network"
-INITSCRIPT_PARAMS:${PN}-network = "defaults 98"
+INITSCRIPT_PARAMS:${PN}-network = "defaults 99"
 
 RDEPENDS:${PN} = "podman catatonit modutils-initscripts kernel-modules"
-RDEPENDS:${PN}-network = "iptables netavark socat"
+RDEPENDS:${PN}-network = "iptables netavark socat sudo"
 
 # User/Group creation parameters
 USERADD_PACKAGES = "${PN}"
@@ -53,9 +53,6 @@ do_compile() {
 }
 
 do_install() {
-    # Install pod configuration
-    install -d ${D}/home/searcher/pod-config
-    install -m 0644 ${WORKDIR}/searcher-ssh-pod.yaml ${D}/home/searcher/pod-config/
 
     # Install init scripts
     install -d ${D}${sysconfdir}/init.d
@@ -66,6 +63,10 @@ do_install() {
     install -d ${D}${bindir}
     install -m 0755 ${WORKDIR}/searchersh ${D}${bindir}
     install -m 0755 ${WORKDIR}/toggle ${D}${bindir}
+
+    # Install sudoers configuration
+    install -d ${D}${sysconfdir}/sudoers.d
+    install -m 0440 ${WORKDIR}/99-searcher ${D}${sysconfdir}/sudoers.d/
 
     # Create persistent directory
     install -d ${D}/persistent
@@ -91,7 +92,6 @@ pkg_postrm:${PN} () {
 FILES:${PN} = " \
     /home/searcher \
     /home/searcher/.config/cni/net.d/* \
-    /home/searcher/pod-config/searcher-ssh-pod.yaml \
     /etc/init.d/searcher-pod \
     /persistent \
     /etc/searcher_key \
@@ -103,4 +103,5 @@ FILES:${PN}-network = " \
     /etc/init.d/searcher-network \
     /usr/bin/searchersh \
     /usr/bin/toggle \
+    /etc/sudoers.d/99-searcher \
 "

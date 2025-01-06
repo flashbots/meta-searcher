@@ -1,266 +1,250 @@
 #!/bin/sh
-set -eux -o pipefail
-
 ### BEGIN INIT INFO
 # Provides:          searcher-network
-# Required-Start:    $network
+# Required-Start:    $network searcher-container
 # Required-Stop:     $network
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: Searcher Network Configuration
-# Description:       Sets up podman networks and iptables rules for searcher containers
+# Description:       Sets up iptables rules for searcher container
 ### END INIT INFO
 
 # Configuration variables
-BUILDER_HOST=10.0.2.2
-BUILDER_STATE_DIFF_PORT=8547
-BUILDER_RPC_PORT=8645
-BUILDER_CL_PORT=9000
-BUILDER_SEARCHER_INPUT_PORT=27017
-BUILDER_EL_PORT=30303
 PODMAN="/usr/bin/podman"
 IPTABLES="/usr/sbin/iptables"
+CONTAINER_NAME="searcher-container"
 
-# Network interface name
-MAINTENANCE_INTERFACE="maintenance0"
-ALWAYS_INTERFACE="always0"
-PRODUCTION_INTERFACE="production0"
+# Port configurations
+SSH_CONTROL_PORT=22
+SSH_DATA_PORT=10022
+# FB_CL_P2P_PORT=9000
+# FB_EL_P2P_PORT=30303
+FB_STATE_DIFF_PORT=8547
+# TITAN_STATE_DIFF_PORT=8548
+# FB_BUILDER_RPC_PORT=8645
+# TITAN_BUILDER_RPC_PORT=8646
+# SEARCHER_INPUT_PORT_1=27017
+# SEARCHER_INPUT_PORT_2=27018
 
-# Network CIDR ranges
-MAINTENANCE_SUBNET="10.90.0.0/24"
-ALWAYS_SUBNET="10.90.1.0/24"
-PRODUCTION_SUBNET="10.90.2.0/24"
+# Chain names for better organization and cleanup
+SEARCHER_INPUT="SEARCHER_INPUT"
+SEARCHER_OUTPUT="SEARCHER_OUTPUT"
+SEARCHER_ESTABLISHED="SEARCHER_ESTABLISHED"
+SEARCHER_MODE="SEARCHER_MODE"      # Mode-specific rules chain
+SEARCHER_BASE="SEARCHER_BASE"      # Permanent rules chain
 
-# Execute a command in the searcher's rootless netns context
-in_netns() {
-    su -s /bin/sh - searcher -c "podman unshare --rootless-netns sh -c \"$*\""
-}
-
-# Execute a command in the searcher's context
-as_searcher() {
-    su -s /bin/sh - searcher -c "$*"
-}
-
-# Network setup functions
-setup_maintenance_network() {
-    echo "Setting up maintenance network..."
-    as_searcher "$PODMAN network create \
-        --interface-name ${MAINTENANCE_INTERFACE} \
-        --subnet ${MAINTENANCE_SUBNET} \
-        --gateway 10.90.0.1 \
-        maintenance" || return 1
-}
-
-setup_maintenance_firewall() {
-    # Block state diff traffic for maintenance subnet
-    in_netns "$IPTABLES -I FORWARD 1 -i ${MAINTENANCE_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${BUILDER_STATE_DIFF_PORT} -j DROP"
-    in_netns "$IPTABLES -I FORWARD 1 -o ${MAINTENANCE_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${BUILDER_STATE_DIFF_PORT} -j DROP"
-    return 0
-}
-
-setup_always_network() {
-    echo "Setting up always network..."
-    as_searcher "$PODMAN network create \
-        --interface-name ${ALWAYS_INTERFACE} \
-        --subnet ${ALWAYS_SUBNET} \
-        --gateway 10.90.1.1 \
-	--route 0.0.0.0/0,10.90.1.1,110 \
-	--route ${BUILDER_HOST}/32,10.90.1.1,90 \
-	--internal \
-	--disable-dns \
-        always" || return 1
-}
-
-setup_always_firewall() {
-    # Default DROP for always subnet
-    in_netns "$IPTABLES -I FORWARD 1 -i ${ALWAYS_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -I FORWARD 1 -o ${ALWAYS_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -I INPUT 1 -i ${ALWAYS_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -I OUTPUT 1 -o ${ALWAYS_INTERFACE} -j DROP"
-
-    # Allow to continue established connections, is this necessary?
-    in_netns "$IPTABLES -A NETAVARK_FORWARD -d ${ALWAYS_SUBNET} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"
-
-    # Allow Builder traffic for specific ports
-    for port in "${BUILDER_RPC_PORT}" "${BUILDER_CL_PORT}" "${BUILDER_SEARCHER_INPUT_PORT}" "${BUILDER_EL_PORT}"; do
-        in_netns "$IPTABLES -I FORWARD 1 -i ${ALWAYS_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${port} -j ACCEPT"
-        in_netns "$IPTABLES -I FORWARD 1 -o ${ALWAYS_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${port} -j ACCEPT"
-    done
-
-    # Then, switch to NAT table to add masquerading rules
-    # First create a unique chain for the new network
-    in_netns "$IPTABLES -t nat -N NETAVARK-ALWY0CHAIN"
-    # Add the postrouting rule to direct traffic to the new chain
-    in_netns "$IPTABLES -t nat -A POSTROUTING -s ${ALWAYS_SUBNET} -j NETAVARK-ALWY0CHAIN"
-    # Add rules to the new NAT chain
-    in_netns "$IPTABLES -t nat -A NETAVARK-ALWY0CHAIN -d ${ALWAYS_SUBNET} -j ACCEPT"
-    in_netns "$IPTABLES -t nat -A NETAVARK-ALWY0CHAIN ! -d 224.0.0.0/4 -j MASQUERADE"
+# make sure the container and openssh server is ready before we start setting up the network
+wait_for_container_ready() {
+    echo "Waiting for searcher container to be ready..."
+    max_attempts=20
+    attempt=1
     
-    # set forwarding to 1
-    in_netns "echo 1 > /proc/sys/net/ipv4/conf/${ALWAYS_INTERFACE}/forwarding"
-
-    return 0
-}
-
-setup_production_network() {
-    echo "Setting up production network..."
-    as_searcher "$PODMAN network create \
-        --interface-name ${PRODUCTION_INTERFACE} \
-        --subnet ${PRODUCTION_SUBNET} \
-        --gateway 10.90.2.1 \
-	--route 0.0.0.0/0,10.90.2.1,110 \
-	--internal \
-	--disable-dns \
-        production" || return 1
-}
-
-setup_production_firewall() {
-    # Default DROP for production subnet
-    in_netns "$IPTABLES -I FORWARD 1 -i ${PRODUCTION_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -I FORWARD 1 -o ${PRODUCTION_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -I INPUT 1 -i ${PRODUCTION_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -I OUTPUT 1 -o ${PRODUCTION_INTERFACE} -j DROP"
-
-    # Allow to continue established connections, is this necessary?
-    in_netns "$IPTABLES -A NETAVARK_FORWARD -d ${PRODUCTION_SUBNET} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"
-
-    # Allow Builder state diff traffic only
-    in_netns "$IPTABLES -I FORWARD 1 -i ${PRODUCTION_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
-    in_netns "$IPTABLES -I FORWARD 1 -o ${PRODUCTION_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
+    # Initialize flags
+    ssh_ipv4_ready=0
+    ssh_ipv6_ready=0
     
-    # Allow Builder traffic for specific ports (replaces always network)
-    for port in "${BUILDER_RPC_PORT}" "${BUILDER_CL_PORT}" "${BUILDER_SEARCHER_INPUT_PORT}" "${BUILDER_EL_PORT}"; do
-        in_netns "$IPTABLES -I FORWARD 1 -i ${PRODUCTION_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${port} -j ACCEPT"
-        in_netns "$IPTABLES -I FORWARD 1 -o ${PRODUCTION_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${port} -j ACCEPT"
+    while [ $attempt -le $max_attempts ]; do
+        echo "Attempt $attempt/$max_attempts: Checking container status..."
+        status=$(su -s /bin/sh searcher -c "$PODMAN container inspect --format '{{.State.Status}}' $CONTAINER_NAME" 2>/dev/null)
+        if [ "$status" != "running" ]; then
+            echo "Container status is '$status', waiting for 'running'"
+            sleep 10
+            attempt=$((attempt + 1))
+            continue
+        fi
+        echo "Container status is 'running'"
+
+        # Get logs into a file with both stdout and stderr
+        su -s /bin/sh searcher -c "$PODMAN logs $CONTAINER_NAME 2>&1" > /tmp/container.log
+        
+        # Set flags based on grep results
+        if grep -q "Server listening on 0.0.0.0 port 22" /tmp/container.log; then
+            ssh_ipv4_ready=1
+        fi
+        
+        if grep -q "Server listening on :: port 22" /tmp/container.log; then
+            ssh_ipv6_ready=1
+        fi
+
+        echo "Current initialization state:"
+        echo "- IPv4 SSH server: $([[ $ssh_ipv4_ready -eq 1 ]] && echo "Ready" || echo "Waiting")"
+        echo "- IPv6 SSH server: $([[ $ssh_ipv6_ready -eq 1 ]] && echo "Ready" || echo "Waiting")"
+
+        # If all required messages have been seen, container is ready
+        if [ $ssh_ipv4_ready -eq 1 ] && [ $ssh_ipv6_ready -eq 1 ]; then
+            echo "Container initialization complete"
+            rm -f /tmp/container.log
+            return 0
+        fi
+        
+        sleep 10
+        attempt=$((attempt + 1))
     done
 
-    # Then, switch to NAT table to add masquerading rules
-    # First create a unique chain for the new network
-    in_netns "$IPTABLES -t nat -N NETAVARK-PROD0CHAIN"
-    # Add the postrouting rule to direct traffic to the new chain
-    in_netns "$IPTABLES -t nat -A POSTROUTING -s ${PRODUCTION_SUBNET} -j NETAVARK-PROD0CHAIN"
-    # Add rules to the new NAT chain
-    in_netns "$IPTABLES -t nat -A NETAVARK-PROD0CHAIN -d ${PRODUCTION_SUBNET} -j ACCEPT"
-    in_netns "$IPTABLES -t nat -A NETAVARK-PROD0CHAIN ! -d 224.0.0.0/4 -j MASQUERADE"
-
-    return 0
+    echo "Container failed to become ready within timeout"
+    rm -f /tmp/container.log
+    return 1
 }
 
-start_infra_container() {
-    # this is necessary, otherwise the rootless network namespace doesn't exist and the iptable rules will
-    # be deleted/won't exist upon searcher pod creation
-    as_searcher "$PODMAN run -d --name searcher-network-infra --restart always --network maintenance,always,production k8s.gcr.io/pause"
-}
-
-start_socat_forward() {
-    in_netns "socat TCP-LISTEN:${BUILDER_STATE_DIFF_PORT},bind=10.90.2.1,fork,reuseaddr TCP:${BUILDER_HOST}:${BUILDER_STATE_DIFF_PORT}" &
-}
-
-# Network Cleanup Functions
-cleanup_maintenance_firewall() {
-    echo "Cleaning up maintenance network firewall rules..."
-    # Remove state diff traffic blocks
-    in_netns "$IPTABLES -D FORWARD -i ${MAINTENANCE_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${BUILDER_STATE_DIFF_PORT} -j DROP"
-    in_netns "$IPTABLES -D FORWARD -o ${MAINTENANCE_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${BUILDER_STATE_DIFF_PORT} -j DROP"
-    return 0
-}
-
-cleanup_always_firewall() {
-    echo "Cleaning up always network firewall rules..."
-    # Remove default DROP for always subnet
-    in_netns "$IPTABLES -D FORWARD -i ${ALWAYS_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -D FORWARD -o ${ALWAYS_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -D INPUT -i ${ALWAYS_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -D OUTPUT -o ${ALWAYS_INTERFACE} -j DROP"
-
-    # Remove established connections rule
-    in_netns "$IPTABLES -D NETAVARK_FORWARD -d ${ALWAYS_SUBNET} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"
-
-    # Remove Builder traffic rules for specific ports
-    for port in "${BUILDER_RPC_PORT}" "${BUILDER_CL_PORT}" "${BUILDER_SEARCHER_INPUT_PORT}" "${BUILDER_EL_PORT}"; do
-        in_netns "$IPTABLES -D FORWARD -i ${ALWAYS_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${port} -j ACCEPT"
-        in_netns "$IPTABLES -D FORWARD -o ${ALWAYS_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${port} -j ACCEPT"
+setup_base_rules() {
+    # Create custom chains
+    for chain in $SEARCHER_MODE $SEARCHER_BASE $SEARCHER_INPUT $SEARCHER_OUTPUT $SEARCHER_ESTABLISHED; do
+        $IPTABLES -N $chain 2>/dev/null || true
+        $IPTABLES -F $chain
     done
 
-    # Clean up NAT rules
-    in_netns "$IPTABLES -t nat -D POSTROUTING -s ${ALWAYS_SUBNET} -j NETAVARK-ALWY0CHAIN"
-    in_netns "$IPTABLES -t nat -F NETAVARK-ALWY0CHAIN"
-    in_netns "$IPTABLES -t nat -X NETAVARK-ALWY0CHAIN"
-    return 0
+    # Link custom chains
+    # All incoming traffic is routed to the searcher input chain
+    $IPTABLES -A INPUT -j $SEARCHER_INPUT
+    # All outgoing traffic is routed to the searcher output chain
+    $IPTABLES -A OUTPUT -j $SEARCHER_OUTPUT
+
+    # Mode-specific rules are evaluated first
+    $IPTABLES -A $SEARCHER_INPUT -j $SEARCHER_MODE
+    $IPTABLES -A $SEARCHER_OUTPUT -j $SEARCHER_MODE
+
+    # Permanent rules are evaluated second
+    $IPTABLES -A $SEARCHER_INPUT -j $SEARCHER_BASE
+    $IPTABLES -A $SEARCHER_OUTPUT -j $SEARCHER_BASE
+    
+    # Instead of allowing all established connections, we route them through our chain
+    $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_ESTABLISHED
+    $IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_ESTABLISHED
+
+    # Default policy: DROP
+    $IPTABLES -P INPUT DROP
+    $IPTABLES -P FORWARD DROP
+    $IPTABLES -P OUTPUT DROP
+
+    # Allow loopback?
+    # $IPTABLES -A INPUT -i lo -j ACCEPT
+    # $IPTABLES -A OUTPUT -o lo -j ACCEPT
 }
 
-cleanup_production_firewall() {
-    echo "Cleaning up production network firewall rules..."
-    # Remove default DROP for production subnet
-    in_netns "$IPTABLES -D FORWARD -i ${PRODUCTION_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -D FORWARD -o ${PRODUCTION_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -D INPUT -i ${PRODUCTION_INTERFACE} -j DROP"
-    in_netns "$IPTABLES -D OUTPUT -o ${PRODUCTION_INTERFACE} -j DROP"
+setup_maintenance_rules() {
+    # # Control Plane SSH (always enabled)
+    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $SSH_CONTROL_PORT -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_CONTROL_PORT -m state --state ESTABLISHED -j ACCEPT
+    
+    # Data Plane SSH (enabled in maintenance)
+    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED -j ACCEPT
 
-    # Remove established connections rule
-    in_netns "$IPTABLES -D NETAVARK_FORWARD -d ${PRODUCTION_SUBNET} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"
+    # # Consensus Client P2P
+    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $FB_CL_P2P_PORT -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
 
-    # Remove Builder state diff traffic rules
-    in_netns "$IPTABLES -D FORWARD -i ${PRODUCTION_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
-    in_netns "$IPTABLES -D FORWARD -o ${PRODUCTION_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${BUILDER_STATE_DIFF_PORT} -j ACCEPT"
+    # # Execution Client P2P
+    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $FB_EL_P2P_PORT -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
 
-    # Remove Builder traffic rules for specific ports (replaces always network)
-    for port in "${BUILDER_RPC_PORT}" "${BUILDER_CL_PORT}" "${BUILDER_SEARCHER_INPUT_PORT}" "${BUILDER_EL_PORT}"; do
-        in_netns "$IPTABLES -D FORWARD -i ${ALWAYS_INTERFACE} -d ${BUILDER_HOST} -p tcp --dport ${port} -j ACCEPT"
-        in_netns "$IPTABLES -D FORWARD -o ${ALWAYS_INTERFACE} -s ${BUILDER_HOST} -p tcp --sport ${port} -j ACCEPT"
+    # Builder RPC outputs
+    # FB Builder
+    # $IPTABLES -A $SEARCHER_OUTPUT -p tcp --dport $FB_BUILDER_RPC_PORT -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+
+    # # Titan Builder
+    # $IPTABLES -A $SEARCHER_OUTPUT -p tcp --dport $TITAN_BUILDER_RPC_PORT -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+
+    # Searcher Input Channels (UDP)
+    # $IPTABLES -A $SEARCHER_INPUT -p udp --dport $SEARCHER_INPUT_PORT_1 -j ACCEPT
+    # $IPTABLES -A $SEARCHER_INPUT -p udp --dport $SEARCHER_INPUT_PORT_2 -j ACCEPT
+    # No ESTABLISHED rules needed for UDP one-way communication
+    # ESTABLISHED outgoing rules may be dangerous
+
+    # State Diff Streams (disabled in maintenance)
+    # Unnecessary in init since default policy is DROP
+    # FB Builder
+    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+    # $IPTABLES -A $SEARCHER_OUTPUT -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+    
+    # # Titan Builder
+    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $TITAN_STATE_DIFF_PORT -j DROP
+    # $IPTABLES -A $SEARCHER_OUTPUT -p tcp --dport $TITAN_STATE_DIFF_PORT -j DROP
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $TITAN_STATE_DIFF_PORT -j DROP
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $TITAN_STATE_DIFF_PORT -j DROP
+}
+
+setup_permanent_rules() {
+    # Control Plane SSH (always enabled)
+    $IPTABLES -A $SEARCHER_BASE -p tcp --dport $SSH_CONTROL_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_CONTROL_PORT -m state --state ESTABLISHED -j ACCEPT
+
+    # # Consensus Client P2P
+    # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_CL_P2P_PORT -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+
+    # # Execution Client P2P
+    # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_EL_P2P_PORT -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+
+    # # Searcher Input Channels (UDP)
+    # $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_1 -j ACCEPT
+    # $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_2 -j ACCEPT
+}
+
+cleanup_rules() {
+    # Remove custom chains from main chains
+    $IPTABLES -D INPUT -j $SEARCHER_INPUT 2>/dev/null || true
+    $IPTABLES -D OUTPUT -j $SEARCHER_OUTPUT 2>/dev/null || true
+    $IPTABLES -D INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_ESTABLISHED 2>/dev/null || true
+    $IPTABLES -D OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_ESTABLISHED 2>/dev/null || true
+
+    # Flush and delete custom chains
+    for chain in $SEARCHER_MODE $SEARCHER_BASE $SEARCHER_INPUT $SEARCHER_OUTPUT $SEARCHER_ESTABLISHED; do
+        $IPTABLES -F $chain 2>/dev/null || true
+        $IPTABLES -X $chain 2>/dev/null || true
     done
 
-    # Clean up NAT rules
-    in_netns "$IPTABLES -t nat -D POSTROUTING -s ${PRODUCTION_SUBNET} -j NETAVARK-PROD0CHAIN"
-    in_netns "$IPTABLES -t nat -F NETAVARK-PROD0CHAIN"
-    in_netns "$IPTABLES -t nat -X NETAVARK-PROD0CHAIN"
-    return 0
+    # Reset default policies
+    $IPTABLES -P INPUT DROP
+    $IPTABLES -P FORWARD DROP
+    $IPTABLES -P OUTPUT DROP
 }
 
 case "$1" in
     start)
-        echo "Setting up searcher networks..."
-        if setup_maintenance_network && \
-           setup_always_network && \
-           setup_production_network && \
-           start_infra_container && \
-	   start_socat_forward && \
-           setup_maintenance_firewall && \
-           setup_always_firewall && \
-           setup_production_firewall; then
-            echo "Searcher networks setup completed successfully"
+        if ! wait_for_container_ready; then
+            echo "Container is not ready, cannot proceed with network setup"
+            exit 1
+        fi
+
+        echo "Setting up searcher network rules..."
+        if setup_base_rules && setup_maintenance_rules && setup_permanent_rules; then
+            echo "Network setup completed successfully"
             exit 0
         else
-            echo "Failed to setup searcher networks"
+            echo "Failed to setup network rules"
             exit 1
         fi
         ;;
-    setup_firewall)
-        echo "Setting up custom firewall rules..."
-        if setup_maintenance_firewall && \
-           setup_always_firewall && \
-           setup_production_firewall; then
-            echo "Custom firewall rules setup completed successfully"
+    stop)
+        echo "Cleaning up searcher network rules..."
+        if cleanup_rules; then
+            echo "Network rules cleanup completed successfully"
             exit 0
         else
-            echo "Failed to setup custom firewall rules"
+            echo "Failed to cleanup network rules"
             exit 1
         fi
         ;;
-    cleanup_firewall)
-        echo "Cleaning up custom firewall rules..."
-        if cleanup_maintenance_firewall && \
-           cleanup_always_firewall && \
-           cleanup_production_firewall; then
-            echo "Custom firewall rules cleanup completed successfully"
-            exit 0
-        else
-            echo "Failed to cleanup custom firewall rules"
-            exit 1
-        fi
+    status)
+        echo "Current iptables rules:"
+        $IPTABLES -L -v -n
+        echo "\nCustom chains:"
+        $IPTABLES -L $SEARCHER_INPUT -v -n
+        $IPTABLES -L $SEARCHER_OUTPUT -v -n
+        $IPTABLES -L $SEARCHER_ESTABLISHED -v -n
         ;;
     *)
-        echo "Usage: $0 {start|setup_firewall|cleanup_firewall}"
+        echo "Usage: $0 {start|stop|status}"
         exit 1
         ;;
 esac

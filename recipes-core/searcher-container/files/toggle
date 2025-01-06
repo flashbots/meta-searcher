@@ -1,13 +1,30 @@
 #!/bin/sh
 
+# Check if we're root, if not, fail
+if [ "$(id -u)" != "0" ]; then
+    echo "Error: This script must be run as root"
+    exit 1
+fi
+
 LOCK_FILE="/tmp/searcher-network.lock"
 STATE_FILE="/tmp/searcher-network.state"
 TIMESTAMP_FILE="/tmp/searcher-network-last-stop.timestamp"
 
 PODMAN="/usr/bin/podman"
-MAINTENANCE_INTERFACE="maintenance0"
-ALWAYS_INTERFACE="always0"
-PRODUCTION_INTERFACE="production0"
+CONTAINER_NAME="searcher-container"
+IPTABLES="/usr/sbin/iptables"
+
+# iptable chain names
+SEARCHER_INPUT="SEARCHER_INPUT"
+SEARCHER_OUTPUT="SEARCHER_OUTPUT"
+SEARCHER_ESTABLISHED="SEARCHER_ESTABLISHED"
+SEARCHER_MODE="SEARCHER_MODE" 
+SEARCHER_BASE="SEARCHER_BASE"     
+
+# Port configurations
+SSH_DATA_PORT=10022
+FB_STATE_DIFF_PORT=8547
+TITAN_STATE_DIFF_PORT=8548
 
 with_lock() {
     (
@@ -40,7 +57,7 @@ check_delay() {
     
     last_stop=$(cat "$TIMESTAMP_FILE")
     current_time=$(date +%s)
-    delay_seconds=120  # 2 minutes
+    delay_seconds=10  # 2 minutes, CHANGED FOR DEBUGGING, REMOVE AFTER TESTING
     
     if [ $((current_time - last_stop)) -lt $delay_seconds ]; then
         remaining=$((delay_seconds - (current_time - last_stop)))
@@ -50,76 +67,81 @@ check_delay() {
     return 0
 }
 
-as_searcher() {
-    if [ "$(id -un)" = "searcher" ]; then
-        # Already running as searcher user, execute directly
-        eval "$1"
-    else
-        # Need to switch to searcher user
-        su -s /bin/sh - searcher -c "$1"
-    fi
-}
+# New function to manage iptables rules
+configure_mode_rules() {
+    local mode=$1
+    
+    # First, flush mode-specific rules
+    $IPTABLES -F $SEARCHER_MODE
+    
+    # Add new rules based on mode
+    if [ "$mode" = "maintenance" ]; then
+        # First block all state diff access
+        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
+        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+        
+        # Then enable SSH access
+        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j ACCEPT
+        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+        
+    elif [ "$mode" = "production" ]; then
+        # Block SSH access
+        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j DROP
+        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -j DROP
 
-in_netns() {
-    as_searcher "podman unshare --rootless-netns sh -c \"$1\""
+        # Enable state diff streams
+        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j ACCEPT
+        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+        
+    else  # stopped state
+        # Drop SSH connections
+        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j DROP
+        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -j DROP
+
+        # Drop state diff connections
+        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
+        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+    fi
 }
 
 move_to_production() {
-    CONTAINER_NAME=$(as_searcher "podman pod inspect searcher-ssh-pod" | grep '"Name":' | grep '\-infra"' | cut -d'"' -f4)
-    if [ -z "$CONTAINER_NAME" ]; then
-        echo "Error: Failed to get container name"
-        return 1
-    fi
     if [ "$(get_state)" != "maintenance" ]; then
         echo "Error: Can only move to production from maintenance state"
         return 1
     fi
-    echo "Moving container $CONTAINER_NAME to production network..."
-    if as_searcher "$PODMAN network disconnect maintenance $CONTAINER_NAME" && \
-       in_netns "$PODMAN network connect production $CONTAINER_NAME" && \
-       in_netns "echo 0 > /proc/sys/net/ipv4/conf/${MAINTENANCE_INTERFACE}/forwarding" && \
-       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${ALWAYS_INTERFACE}/forwarding" && \
-       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${PRODUCTION_INTERFACE}/forwarding"; then
+    echo "Moving to production mode..."
+    if configure_mode_rules "production"; then
         set_state "production"
-        echo "Container successfully moved to production network"
+        echo "Successfully switched to production mode"
         return 0
     else
-        echo "Failed to move container to production network"
+        echo "Failed to switch to production mode"
         return 1
     fi
 }
 
 disconnect_from_production() {
     write_timestamp
-    CONTAINER_NAME=$(as_searcher "podman pod inspect searcher-ssh-pod" | grep '"Name":' | grep '\-infra"' | cut -d'"' -f4)
-    if [ -z "$CONTAINER_NAME" ]; then
-        echo "Error: Failed to get container name"
-        return 1
-    fi
     if [ "$(get_state)" != "production" ]; then
         echo "Error: Can only disconnect from production state"
         return 1
     fi
-    echo "Disconnecting container $CONTAINER_NAME from production network..."
-    if as_searcher "$PODMAN network disconnect production $CONTAINER_NAME" && \
-       in_netns "echo 0 > /proc/sys/net/ipv4/conf/${MAINTENANCE_INTERFACE}/forwarding" && \
-       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${ALWAYS_INTERFACE}/forwarding" && \
-       in_netns "echo 0 > /proc/sys/net/ipv4/conf/${PRODUCTION_INTERFACE}/forwarding"; then
+    echo "Disconnecting from production mode..."
+    if configure_mode_rules "stopped"; then
         set_state "stopped"
-        echo "Container successfully disconnected from production network"
+        echo "Successfully disconnected from production mode"
         return 0
     else
-        echo "Failed to disconnect container from production network"
+        echo "Failed to disconnect from production mode"
         return 1
     fi
 }
 
 connect_to_maintenance() {
-    CONTAINER_NAME=$(as_searcher "podman pod inspect searcher-ssh-pod" | grep '"Name":' | grep '\-infra"' | cut -d'"' -f4)
-    if [ -z "$CONTAINER_NAME" ]; then
-        echo "Error: Failed to get container name"
-        return 1
-    fi
     if [ "$(get_state)" != "stopped" ]; then
         echo "Error: Can only connect to maintenance from stopped state"
         return 1
@@ -127,17 +149,14 @@ connect_to_maintenance() {
     if ! check_delay; then
         return 1
     fi
-    echo "Connecting container $CONTAINER_NAME to maintenance network..."
-    if as_searcher "$PODMAN network connect maintenance $CONTAINER_NAME" && \
-       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${MAINTENANCE_INTERFACE}/forwarding" && \
-       in_netns "echo 1 > /proc/sys/net/ipv4/conf/${ALWAYS_INTERFACE}/forwarding" && \
-       in_netns "echo 0 > /proc/sys/net/ipv4/conf/${PRODUCTION_INTERFACE}/forwarding"; then
+    echo "Connecting to maintenance mode..."
+    if configure_mode_rules "maintenance"; then
         set_state "maintenance"
         rm -f "$TIMESTAMP_FILE"  # Clear timestamp after successful use
-        echo "Container successfully connected to maintenance network"
+        echo "Successfully connected to maintenance mode"
         return 0
     else
-        echo "Failed to connect container to maintenance network"
+        echo "Failed to connect to maintenance mode"
         return 1
     fi
 }
@@ -177,4 +196,3 @@ toggle() {
 # Main execution
 with_lock toggle
 exit $?
-
