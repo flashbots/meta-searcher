@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# We must be root to change iptable rules
 # Check if we're root, if not, fail
 if [ "$(id -u)" != "0" ]; then
     echo "Error: This script must be run as root"
@@ -77,7 +78,6 @@ configure_mode_rules() {
     # Add new rules based on mode
     if [ "$mode" = "maintenance" ]; then
         # First block all state diff access
-        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
         $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
         $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
         $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP

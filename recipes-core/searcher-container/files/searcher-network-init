@@ -17,14 +17,14 @@ CONTAINER_NAME="searcher-container"
 # Port configurations
 SSH_CONTROL_PORT=22
 SSH_DATA_PORT=10022
-# FB_CL_P2P_PORT=9000
-# FB_EL_P2P_PORT=30303
+FB_CL_P2P_PORT=9000
+FB_EL_P2P_PORT=30303
 FB_STATE_DIFF_PORT=8547
-# TITAN_STATE_DIFF_PORT=8548
-# FB_BUILDER_RPC_PORT=8645
-# TITAN_BUILDER_RPC_PORT=8646
-# SEARCHER_INPUT_PORT_1=27017
-# SEARCHER_INPUT_PORT_2=27018
+TITAN_STATE_DIFF_PORT=8548
+FB_BUILDER_RPC_PORT=8645
+TITAN_BUILDER_RPC_PORT=8646
+SEARCHER_INPUT_PORT_1=27017
+SEARCHER_INPUT_PORT_2=27018
 
 # Chain names for better organization and cleanup
 SEARCHER_INPUT="SEARCHER_INPUT"
@@ -33,10 +33,10 @@ SEARCHER_ESTABLISHED="SEARCHER_ESTABLISHED"
 SEARCHER_MODE="SEARCHER_MODE"      # Mode-specific rules chain
 SEARCHER_BASE="SEARCHER_BASE"      # Permanent rules chain
 
-# make sure the container and openssh server is ready before we start setting up the network
+# make sure the container and openssh server is ready before we start setting up the restrictive firewall rules
 wait_for_container_ready() {
     echo "Waiting for searcher container to be ready..."
-    max_attempts=20
+    max_attempts=10
     attempt=1
     
     # Initialize flags
@@ -122,54 +122,12 @@ setup_base_rules() {
 }
 
 setup_maintenance_rules() {
-    # # Control Plane SSH (always enabled)
-    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $SSH_CONTROL_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_CONTROL_PORT -m state --state ESTABLISHED -j ACCEPT
-    
     # Data Plane SSH (enabled in maintenance)
     $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j ACCEPT
     $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # # Consensus Client P2P
-    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $FB_CL_P2P_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # # Execution Client P2P
-    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $FB_EL_P2P_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # Builder RPC outputs
-    # FB Builder
-    # $IPTABLES -A $SEARCHER_OUTPUT -p tcp --dport $FB_BUILDER_RPC_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # # Titan Builder
-    # $IPTABLES -A $SEARCHER_OUTPUT -p tcp --dport $TITAN_BUILDER_RPC_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # Searcher Input Channels (UDP)
-    # $IPTABLES -A $SEARCHER_INPUT -p udp --dport $SEARCHER_INPUT_PORT_1 -j ACCEPT
-    # $IPTABLES -A $SEARCHER_INPUT -p udp --dport $SEARCHER_INPUT_PORT_2 -j ACCEPT
-    # No ESTABLISHED rules needed for UDP one-way communication
-    # ESTABLISHED outgoing rules may be dangerous
-
-    # State Diff Streams (disabled in maintenance)
-    # Unnecessary in init since default policy is DROP
-    # FB Builder
-    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
-    # $IPTABLES -A $SEARCHER_OUTPUT -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
-    
-    # # Titan Builder
-    # $IPTABLES -A $SEARCHER_INPUT -p tcp --dport $TITAN_STATE_DIFF_PORT -j DROP
-    # $IPTABLES -A $SEARCHER_OUTPUT -p tcp --dport $TITAN_STATE_DIFF_PORT -j DROP
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $TITAN_STATE_DIFF_PORT -j DROP
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $TITAN_STATE_DIFF_PORT -j DROP
 }
 
+# state diff is default blocked at startup
 setup_permanent_rules() {
     # Control Plane SSH (always enabled)
     $IPTABLES -A $SEARCHER_BASE -p tcp --dport $SSH_CONTROL_PORT -j ACCEPT
@@ -188,6 +146,16 @@ setup_permanent_rules() {
     # # Searcher Input Channels (UDP)
     # $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_1 -j ACCEPT
     # $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_2 -j ACCEPT
+
+    # # Builder RPC outputs
+    # # FB Builder
+    # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_BUILDER_RPC_PORT -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+    # # Titan Builder
+    # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $TITAN_BUILDER_RPC_PORT -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
 }
 
 cleanup_rules() {
