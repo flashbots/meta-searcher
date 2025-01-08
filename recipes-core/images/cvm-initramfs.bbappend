@@ -1,1 +1,1 @@
-PACKAGE_INSTALL:append = " dropbear disk-encryption searcher-container searcher-container-network"
+PACKAGE_INSTALL:append = " dropbear ssh-pubkey-server searcher-container searcher-container-network"

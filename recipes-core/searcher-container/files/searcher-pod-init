@@ -27,6 +27,7 @@ case "$1" in
             --name $NAME \
             -p ${SEARCHER_SSH_PORT}:22 \
             -p ${FLASHBOTS_BUILDER_STATE_DIFF_PORT}:${FLASHBOTS_BUILDER_STATE_DIFF_PORT} \
+            -p 8555:8545 \
             -v /etc/searcher_key:/container_auth_keys:ro \
             -v /persistent:/persistent \
             docker.io/library/ubuntu:24.04 \

@@ -133,6 +133,15 @@ setup_permanent_rules() {
     $IPTABLES -A $SEARCHER_BASE -p tcp --dport $SSH_CONTROL_PORT -j ACCEPT
     $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_CONTROL_PORT -m state --state ESTABLISHED -j ACCEPT
 
+    # RPC Bundle Submission Chain:
+    # Container(8545) -> Host(8555) -> Destination(8565)
+    # Container internal port: 8545 (which is mapped to host 8555 in the podman config)
+    # RPC Bundle Submission Chain (outbound only)
+    # Allow outgoing connections to destination port 8565
+    # PING rpc.flashbots.net (172.67.36.8) 56(84) bytes of data.
+    $IPTABLES -A $SEARCHER_BASE -p tcp -d 172.67.36.8 --dport 443 -j ACCEPT
+    $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp -s 172.67.36.8 --sport 443 -m state --state ESTABLISHED -j ACCEPT
+
     # # Consensus Client P2P
     # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_CL_P2P_PORT -j ACCEPT
     # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
