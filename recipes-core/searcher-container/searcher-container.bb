@@ -73,6 +73,7 @@ do_install() {
 
     # Create logs directory
     install -d ${D}/searcher_logs
+    chown 1000:adm ${D}/searcher_logs
     # TODO: add noexec and other flags to mount
 
     # Add searcher ssh key
