@@ -116,9 +116,9 @@ setup_base_rules() {
     $IPTABLES -P FORWARD DROP
     $IPTABLES -P OUTPUT DROP
 
-    # Allow loopback?
-    # $IPTABLES -A INPUT -i lo -j ACCEPT
-    # $IPTABLES -A OUTPUT -o lo -j ACCEPT
+    # Allow loopback
+    $IPTABLES -A INPUT -i lo -j ACCEPT
+    $IPTABLES -A OUTPUT -o lo -j ACCEPT
 }
 
 setup_maintenance_rules() {
