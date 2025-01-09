@@ -14,7 +14,8 @@ SRC_URI = " \
 # User/Group creation parameters
 USERADD_PACKAGES = "${PN}"
 GROUPADD_PARAM:${PN} = "-r fluentbit"
-USERADD_PARAM:${PN} = "-r -g fluentbit -s /sbin/nologin fluentbit"
+# USERADD_PARAM:${PN} = "-r -g fluentbit -s /sbin/nologin fluentbit"
+USERADD_PARAM:${PN} = "-m -g fluentbit -g adm -d /home/fluentbit -s /sbin/nologin -u 1011 fluentbit"
 
 # Init script configuration
 INITSCRIPT_NAME:${PN} = "fluentbit-pod"
@@ -34,12 +35,17 @@ do_install() {
     install -m 0755 ${WORKDIR}/fluentbit-pod-init ${D}${sysconfdir}/init.d/fluentbit-pod
 
     chown -R fluentbit:fluentbit ${D}/etc/fluentbit
+
+    install -d ${D}/delayed_logs
+    chown fluentbit:adm ${D}/delayed_logs
 }
 
 FILES:${PN} = " \
+    /home/fluentbit \
     /etc/fluentbit \
     /etc/fluentbit/pod-config/fluentbit-pod.yaml \
     /etc/fluentbit/pod-config/pod-config/fluentbit-pod.yaml \
     /etc/fluentbit/fluentbitd-config/fluentbit.conf \
     /etc/init.d/fluentbit-pod \
+    /delayed_logs \
 "

@@ -9,20 +9,32 @@ spec:
   containers:
     - name: fluentbit
       image: docker.io/fluent/fluent-bit:latest
+      # use https://docs.fluentbit.io/manual/installation/docker to debug, e.g.
+      # image: docker.io/fluent/fluent-bit:3.2.4-debug
       volumeMounts:
         - name: logs-volume
           mountPath: /var/log/searcher
-      command: ["/bin/sh"]
+        - name: fluentbit-config
+          mountPath: /fluentbit.conf
+          readOnly: true
+        - name: delayed-logs-volume
+          mountPath: /var/log/fluentbit
+      command: ["/fluent-bit/bin/fluent-bit"]
       args:
-        - "-c"
-        - |
-          ls -lah > /var/log/searcher/test1 \
-          /fluent-bit/bin/fluent-bit --version -o /var/log/searcher/fb_logs2 -l /var/log/searcher/fb_logs  \
-          # -i forward -o stdout -p format=json_lines -f 1
+        - "--config"
+        - "/fluentbit.conf"
   volumes:
     - name: logs-volume
       hostPath:
-        path: /var/log/searcher
+        path: /searcher_logs
+        type: Directory
+    - name: fluentbit-config
+      hostPath:
+        path: /etc/fluentbit/fluentbitd-config/fluentbit.conf
+        type: File
+    - name: delayed-logs-volume
+      hostPath:
+        path: /delayed_logs
         type: Directory
   restartPolicy: Always
   # Using vfs storage driver
