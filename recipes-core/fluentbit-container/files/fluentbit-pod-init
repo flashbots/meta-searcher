@@ -1,19 +1,18 @@
 #!/bin/sh
 ### BEGIN INIT INFO
-# Provides:          fluentbit-pod
+# Provides:          fluentbit-container
 # Required-Start:    $remote_fs
 # Required-Stop:     $remote_fs
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: Fluentbit Pod
-# Description:       Starts the fluentbit Pod using podman
+# Short-Description: Fluentbit Container
+# Description:       Starts the fluentbit container using podman
 ### END INIT INFO
 
-NAME=fluentbit-pod
 DAEMON=/usr/bin/podman
 USER=fluentbit
-POD_CONFIG=/etc/fluentbit/pod-config/fluentbit-pod.yaml
-POD_NAME=fluentbit-pod
+NAME=fluentbit-container
+CONFIG_PATH=/etc/fluentbit/config/fluentbit.conf
 
 # Exit if podman is not installed
 [ -x "$DAEMON" ] || exit 0
@@ -21,12 +20,19 @@ POD_NAME=fluentbit-pod
 case "$1" in
     start)
         echo "Starting $NAME..."
-        su -s /bin/sh $USER -c "cd ~ && $DAEMON play kube $POD_CONFIG"
+        su -s /bin/sh $USER -c "cd ~ && $DAEMON run -d \
+            --name $NAME \
+            --restart=always \
+            -v $CONFIG_PATH:/fluent-bit/etc/fluent-bit.conf:rw \
+            -v /delayed_logs:/var/log/fluentbit \
+            -v /searcher_logs:/var/log/searcher:rw \
+            docker.io/fluent/fluent-bit:3.2.4-debug \
+            /fluent-bit/bin/fluent-bit --config /fluent-bit/etc/fluent-bit.conf"
         ;;
     stop)
         echo "Stopping $NAME..."
-        su -s /bin/sh $USER -c "cd ~ && $DAEMON pod stop $POD_NAME"
-        su -s /bin/sh $USER -c "cd ~ && $DAEMON pod rm -f $POD_NAME"
+        su -s /bin/sh $USER -c "cd ~ && $DAEMON stop $NAME"
+        su -s /bin/sh $USER -c "cd ~ && $DAEMON rm -f $NAME"
         ;;
     restart)
         $0 stop
@@ -34,8 +40,9 @@ case "$1" in
         $0 start
         ;;
     status)
-        if su -s /bin/sh $USER -c "cd ~ && $DAEMON pod exists $POD_NAME"; then
+        if su -s /bin/sh $USER -c "cd ~ && $DAEMON container exists $NAME"; then
             echo "$NAME is running"
+            su -s /bin/sh $USER -c "cd ~ && $DAEMON ps"
             exit 0
         else
             echo "$NAME is not running"

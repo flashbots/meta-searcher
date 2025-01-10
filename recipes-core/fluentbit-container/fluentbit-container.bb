@@ -3,10 +3,10 @@ LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 # fyi: https://docs.fluentbit.io/manual/installation/yocto-embedded-linux
 
+inherit update-rc.d
 inherit useradd
 
 SRC_URI = " \
-    file://fluentbit-pod.yaml \
     file://fluentbit.conf \
     file://fluentbit-pod-init \
 "
@@ -15,20 +15,20 @@ SRC_URI = " \
 USERADD_PACKAGES = "${PN}"
 GROUPADD_PARAM:${PN} = "-r fluentbit"
 # USERADD_PARAM:${PN} = "-r -g fluentbit -s /sbin/nologin fluentbit"
-USERADD_PARAM:${PN} = "-m -g fluentbit -g adm -d /home/fluentbit -s /sbin/nologin -u 1011 fluentbit"
+# USERADD_PARAM:${PN} = "-m -g fluentbit -g adm -d /home/fluentbit -s /sbin/nologin -u 1011 fluentbit"
+USERADD_PARAM:${PN} = "-m -g fluentbit -g adm -d /home/fluentbit -s /bin/bash -u 1010 fluentbit"
 
 # Init script configuration
+INITSCRIPT_PACKAGES = "${PN}"
 INITSCRIPT_NAME:${PN} = "fluentbit-pod"
 INITSCRIPT_PARAMS:${PN} = "defaults 99"
 
 RDEPENDS:${PN} = "podman modutils-initscripts"
 
 do_install() {
-    # Install pod configuration
-    install -d ${D}/etc/fluentbit/pod-config
-    install -d ${D}/etc/fluentbit/fluentbitd-config
-    install -m 0644 ${WORKDIR}/fluentbit-pod.yaml ${D}/etc/fluentbit/pod-config/
-    install -m 0644 ${WORKDIR}/fluentbit.conf ${D}/etc/fluentbit/fluentbitd-config/
+    # Install fluentbit configuration
+    install -d ${D}/etc/fluentbit/config
+    install -m 0644 ${WORKDIR}/fluentbit.conf ${D}/etc/fluentbit/config/
 
     # Install init scripts
     install -d ${D}${sysconfdir}/init.d
@@ -36,6 +36,7 @@ do_install() {
 
     chown -R fluentbit:fluentbit ${D}/etc/fluentbit
 
+    # Create logs directory with proper permissions
     install -d ${D}/delayed_logs
     chown fluentbit:adm ${D}/delayed_logs
 }
@@ -43,9 +44,7 @@ do_install() {
 FILES:${PN} = " \
     /home/fluentbit \
     /etc/fluentbit \
-    /etc/fluentbit/pod-config/fluentbit-pod.yaml \
-    /etc/fluentbit/pod-config/pod-config/fluentbit-pod.yaml \
-    /etc/fluentbit/fluentbitd-config/fluentbit.conf \
+    /etc/fluentbit/config/fluentbit.conf \
     /etc/init.d/fluentbit-pod \
     /delayed_logs \
 "
