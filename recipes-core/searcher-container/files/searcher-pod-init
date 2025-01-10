@@ -34,6 +34,7 @@ case "$1" in
             -v /etc/searcher_key:/container_auth_keys:ro \
             -v /persistent:/persistent \
             -v /etc/searcher/ssh_hostkey:/etc/searcher/ssh_hostkey:rw \
+            -v /searcher_logs:/var/log/searcher \
             docker.io/library/ubuntu:24.04 \
             /bin/sh -c ' \
                 DEBIAN_FRONTEND=noninteractive apt-get update && \
