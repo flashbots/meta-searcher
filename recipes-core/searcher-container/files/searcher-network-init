@@ -29,9 +29,10 @@ SEARCHER_INPUT_PORT_2=27018
 # Chain names for better organization and cleanup
 SEARCHER_INPUT="SEARCHER_INPUT"
 SEARCHER_OUTPUT="SEARCHER_OUTPUT"
-SEARCHER_ESTABLISHED="SEARCHER_ESTABLISHED"
 SEARCHER_MODE="SEARCHER_MODE"      # Mode-specific rules chain
 SEARCHER_BASE="SEARCHER_BASE"      # Permanent rules chain
+SEARCHER_BASE_ESTABLISHED="SEARCHER_BASE_ESTABLISHED" 
+SEARCHER_MODE_ESTABLISHED="SEARCHER_MODE_ESTABLISHED"  
 
 # make sure the container and openssh server is ready before we start setting up the restrictive firewall rules
 wait_for_container_ready() {
@@ -88,7 +89,7 @@ wait_for_container_ready() {
 
 setup_base_rules() {
     # Create custom chains
-    for chain in $SEARCHER_MODE $SEARCHER_BASE $SEARCHER_INPUT $SEARCHER_OUTPUT $SEARCHER_ESTABLISHED; do
+    for chain in $SEARCHER_MODE $SEARCHER_BASE $SEARCHER_INPUT $SEARCHER_OUTPUT $SEARCHER_BASE_ESTABLISHED $SEARCHER_MODE_ESTABLISHED; do
         $IPTABLES -N $chain 2>/dev/null || true
         $IPTABLES -F $chain
     done
@@ -107,14 +108,18 @@ setup_base_rules() {
     $IPTABLES -A $SEARCHER_INPUT -j $SEARCHER_BASE
     $IPTABLES -A $SEARCHER_OUTPUT -j $SEARCHER_BASE
     
-    # Instead of allowing all established connections, we route them through our chain
-    $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_ESTABLISHED
-    $IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_ESTABLISHED
+    # Split established connections into mode and base
+    # Mode-specific established connections are checked first
+    $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_MODE_ESTABLISHED
+    $IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_MODE_ESTABLISHED
+    # Base established connections are checked second
+    $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED
+    $IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED
 
     # Default policy: ACCEPT
-    $IPTABLES -P INPUT ACCEPT
-    $IPTABLES -P FORWARD ACCEPT
-    $IPTABLES -P OUTPUT ACCEPT
+    $IPTABLES -P INPUT DROP
+    $IPTABLES -P FORWARD DROP
+    $IPTABLES -P OUTPUT DROP
 
     # Allow loopback
     $IPTABLES -A INPUT -i lo -j ACCEPT
@@ -124,14 +129,14 @@ setup_base_rules() {
 setup_maintenance_rules() {
     # Data Plane SSH (enabled in maintenance)
     $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED -j ACCEPT
 }
 
 # state diff is default blocked at startup
 setup_permanent_rules() {
     # Control Plane SSH (always enabled)
     $IPTABLES -A $SEARCHER_BASE -p tcp --dport $SSH_CONTROL_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_CONTROL_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $SSH_CONTROL_PORT -m state --state ESTABLISHED -j ACCEPT
 
     # RPC Bundle Submission Chain:
     # Container(8545) -> Host(8555) -> Destination(8565)
@@ -140,17 +145,17 @@ setup_permanent_rules() {
     # Allow outgoing connections to destination port 8565
     # PING rpc.flashbots.net (172.67.36.8) 56(84) bytes of data.
     $IPTABLES -A $SEARCHER_BASE -p tcp -d 172.67.36.8 --dport 443 -j ACCEPT
-    $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp -s 172.67.36.8 --sport 443 -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp -s 172.67.36.8 --sport 443 -m state --state ESTABLISHED -j ACCEPT
 
     # # Consensus Client P2P
     # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_CL_P2P_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
 
     # # Execution Client P2P
     # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_EL_P2P_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
 
     # # Searcher Input Channels (UDP)
     # $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_1 -j ACCEPT
@@ -159,23 +164,25 @@ setup_permanent_rules() {
     # # Builder RPC outputs
     # # FB Builder
     # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_BUILDER_RPC_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
     # # Titan Builder
     # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $TITAN_BUILDER_RPC_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
 }
 
 cleanup_rules() {
     # Remove custom chains from main chains
     $IPTABLES -D INPUT -j $SEARCHER_INPUT 2>/dev/null || true
     $IPTABLES -D OUTPUT -j $SEARCHER_OUTPUT 2>/dev/null || true
-    $IPTABLES -D INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_ESTABLISHED 2>/dev/null || true
-    $IPTABLES -D OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_ESTABLISHED 2>/dev/null || true
+    $IPTABLES -D INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_MODE_ESTABLISHED 2>/dev/null || true
+    $IPTABLES -D OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_MODE_ESTABLISHED 2>/dev/null || true
+    $IPTABLES -D INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED 2>/dev/null || true
+    $IPTABLES -D OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED 2>/dev/null || true
 
     # Flush and delete custom chains
-    for chain in $SEARCHER_MODE $SEARCHER_BASE $SEARCHER_INPUT $SEARCHER_OUTPUT $SEARCHER_ESTABLISHED; do
+    for chain in $SEARCHER_MODE $SEARCHER_BASE $SEARCHER_INPUT $SEARCHER_OUTPUT $SEARCHER_BASE_ESTABLISHED $SEARCHER_MODE_ESTABLISHED; do
         $IPTABLES -F $chain 2>/dev/null || true
         $IPTABLES -X $chain 2>/dev/null || true
     done
@@ -218,7 +225,8 @@ case "$1" in
         echo "\nCustom chains:"
         $IPTABLES -L $SEARCHER_INPUT -v -n
         $IPTABLES -L $SEARCHER_OUTPUT -v -n
-        $IPTABLES -L $SEARCHER_ESTABLISHED -v -n
+        $IPTABLES -L $SEARCHER_MODE_ESTABLISHED -v -n
+        $IPTABLES -L $SEARCHER_BASE_ESTABLISHED -v -n
         ;;
     *)
         echo "Usage: $0 {start|stop|status}"

@@ -18,9 +18,10 @@ IPTABLES="/usr/sbin/iptables"
 # iptable chain names
 SEARCHER_INPUT="SEARCHER_INPUT"
 SEARCHER_OUTPUT="SEARCHER_OUTPUT"
-SEARCHER_ESTABLISHED="SEARCHER_ESTABLISHED"
 SEARCHER_MODE="SEARCHER_MODE" 
 SEARCHER_BASE="SEARCHER_BASE"     
+SEARCHER_BASE_ESTABLISHED="SEARCHER_BASE_ESTABLISHED"
+SEARCHER_MODE_ESTABLISHED="SEARCHER_MODE_ESTABLISHED"
 
 # Port configurations
 SSH_DATA_PORT=10022
@@ -74,37 +75,38 @@ configure_mode_rules() {
     
     # First, flush mode-specific rules
     $IPTABLES -F $SEARCHER_MODE
+    $IPTABLES -F $SEARCHER_MODE_ESTABLISHED
     
     # Add new rules based on mode
     if [ "$mode" = "maintenance" ]; then
         # First block all state diff access
         $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
-        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
-        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
+        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
         
         # Then enable SSH access
         $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
         
     elif [ "$mode" = "production" ]; then
         # Block SSH access
         $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j DROP
-        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -j DROP
+        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -j DROP
 
         # Enable state diff streams
         $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
         
     else  # stopped state
         # Drop SSH connections
         $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j DROP
-        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -j DROP
+        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -j DROP
 
         # Drop state diff connections
         $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
-        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
-        $IPTABLES -A $SEARCHER_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
+        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
     fi
 }
 
