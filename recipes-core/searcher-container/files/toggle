@@ -7,9 +7,9 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
-LOCK_FILE="/tmp/searcher-network.lock"
-STATE_FILE="/tmp/searcher-network.state"
-TIMESTAMP_FILE="/tmp/searcher-network-last-stop.timestamp"
+LOCK_FILE="/etc/searcher-network.lock"
+STATE_FILE="/etc/searcher-network.state"
+TIMESTAMP_FILE="/etc/searcher-network-last-stop.timestamp"
 
 PODMAN="/usr/bin/podman"
 CONTAINER_NAME="searcher-container"
