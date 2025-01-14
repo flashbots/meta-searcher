@@ -24,8 +24,10 @@ case "$1" in
             --name $NAME \
             --restart=always \
             -v $CONFIG_PATH:/fluent-bit/etc/fluent-bit.conf:rw \
-            -v /delayed_logs:/var/log/fluentbit \
+            -v /delayed_logs:/var/log/fluentbit:rw \
             -v /searcher_logs:/var/log/searcher:rw \
+            -v /etc/fluentbit/config/delay.lua:/fluent-bit/etc/delay.lua:rw \
+            -v /var/lib/fluentbit/storage:/var/log/fluentbit/storage:rw \
             docker.io/fluent/fluent-bit:3.2.4-debug \
             /fluent-bit/bin/fluent-bit --config /fluent-bit/etc/fluent-bit.conf"
         ;;

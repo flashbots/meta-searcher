@@ -9,6 +9,7 @@ inherit useradd
 SRC_URI = " \
     file://fluentbit.conf \
     file://fluentbit-pod-init \
+    file://delay.lua \
 "
 
 # User/Group creation parameters
@@ -29,6 +30,7 @@ do_install() {
     # Install fluentbit configuration
     install -d ${D}/etc/fluentbit/config
     install -m 0644 ${WORKDIR}/fluentbit.conf ${D}/etc/fluentbit/config/
+    install -m 0644 ${WORKDIR}/delay.lua ${D}/etc/fluentbit/config/
 
     # Install init scripts
     install -d ${D}${sysconfdir}/init.d
@@ -39,6 +41,11 @@ do_install() {
     # Create logs directory with proper permissions
     install -d ${D}/delayed_logs
     chown fluentbit:adm ${D}/delayed_logs
+
+    # Add storage directory for buffering
+    install -d ${D}/var/lib/fluentbit/storage
+    chown fluentbit:fluentbit ${D}/var/lib/fluentbit/storage
+    chmod 0750 ${D}/var/lib/fluentbit/storage
 }
 
 FILES:${PN} = " \
@@ -47,4 +54,6 @@ FILES:${PN} = " \
     /etc/fluentbit/config/fluentbit.conf \
     /etc/init.d/fluentbit-pod \
     /delayed_logs \
+    /var/lib/fluentbit/storage \
+    /etc/fluentbit/config/delay.lua \
 "
