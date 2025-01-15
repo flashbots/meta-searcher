@@ -16,8 +16,8 @@ SRC_URI = " \
 USERADD_PACKAGES = "${PN}"
 GROUPADD_PARAM:${PN} = "-r fluentbit"
 # USERADD_PARAM:${PN} = "-r -g fluentbit -s /sbin/nologin fluentbit"
-# USERADD_PARAM:${PN} = "-m -g fluentbit -g adm -d /home/fluentbit -s /sbin/nologin -u 1011 fluentbit"
-USERADD_PARAM:${PN} = "-m -g fluentbit -g adm -d /home/fluentbit -s /bin/bash -u 1010 fluentbit"
+USERADD_PARAM:${PN} = "-m -g fluentbit -g adm -d /home/fluentbit -s /sbin/nologin -u 1011 fluentbit"
+# USERADD_PARAM:${PN} = "-m -g fluentbit -g adm -d /home/fluentbit -s /bin/bash -u 1010 fluentbit"
 
 # Init script configuration
 INITSCRIPT_PACKAGES = "${PN}"
@@ -41,11 +41,6 @@ do_install() {
     # Create logs directory with proper permissions
     install -d ${D}/delayed_logs
     chown fluentbit:adm ${D}/delayed_logs
-
-    # Add storage directory for buffering
-    install -d ${D}/var/lib/fluentbit/storage
-    chown fluentbit:fluentbit ${D}/var/lib/fluentbit/storage
-    chmod 0750 ${D}/var/lib/fluentbit/storage
 }
 
 FILES:${PN} = " \
@@ -54,6 +49,5 @@ FILES:${PN} = " \
     /etc/fluentbit/config/fluentbit.conf \
     /etc/init.d/fluentbit-pod \
     /delayed_logs \
-    /var/lib/fluentbit/storage \
     /etc/fluentbit/config/delay.lua \
 "

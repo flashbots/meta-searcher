@@ -3,7 +3,7 @@
 -- Store logs in a global buffer until they're old enough
 buffer = {}
 
-local DELAY_SEC = 120
+local DELAY_SEC = 10
 
 function log_delay(tag, ts_table, record)
     -- Current time in integer seconds
