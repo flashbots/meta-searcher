@@ -6,18 +6,10 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=139bc4b5f578ecacea78dc7b7ad3ed3c"
 
 # Inherit the cargo_bin class to handle Rust/Cargo builds
 # Inherit the update-rc.d class to install the service as a system service
-# Inherit the useradd class to create a system user for the lighthouse service
-inherit cargo_bin update-rc.d useradd
+inherit cargo_bin update-rc.d
 
 # Define dependencies
-DEPENDS += "openssl-native zlib-native postgresql eth-group"
-
-# Add the eth-group runtime dependency
-RDEPENDS:${PN} += "disk-encryption render-config eth-group cvm-reverse-proxy-server cvm-reverse-proxy-client"
-
-# Add the useradd task to create a system user for the lighthouse service
-USERADD_PACKAGES = "${PN}"
-USERADD_PARAM:${PN} = "-r -s /bin/false -G eth lighthouse"
+DEPENDS += "openssl-native zlib-native postgresql"
 
 # Add the init script to the source URI
 SRC_URI += "file://init"
