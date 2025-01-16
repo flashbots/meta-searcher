@@ -33,12 +33,6 @@ int main(int argc, char *argv[]) {
             free(arg_copy);
             return 1;
         }
-        else if (strcmp(command, "failsafe") == 0) {
-            execl("/bin/sh", "sh", "-c", "podman rm -f searcher-container", NULL);
-            perror("execl failed (failsafe)");
-            free(arg_copy);
-            return 1;
-        }
         else if (strcmp(command, "logs") == 0) {
             // If someone wrote "logs 3", 'arg' should be "3"
             if (!arg) {
@@ -54,7 +48,7 @@ int main(int argc, char *argv[]) {
     }
     
     // If none of the above matched, it's an invalid command
-    fprintf(stderr, "Invalid command. Valid commands are: toggle, status, failsafe, logs\n");
+    fprintf(stderr, "Invalid command. Valid commands are: toggle, status, logs\n");
     free(arg_copy);
     return 1;
 }
