@@ -12,7 +12,6 @@
 # Configuration variables
 PODMAN="/usr/bin/podman"
 IPTABLES="/usr/sbin/iptables"
-IP6TABLES="/usr/sbin/ip6tables"
 CONTAINER_NAME="searcher-container"
 
 # Port configurations
@@ -125,11 +124,6 @@ setup_base_rules() {
     $IPTABLES -P FORWARD DROP
     $IPTABLES -P OUTPUT DROP
 
-    # Default policy: DROP
-    $IP6TABLES -P INPUT DROP
-    $IP6TABLES -P FORWARD DROP
-    $IP6TABLES -P OUTPUT DROP
-
     # Allow loopback
     $IPTABLES -A INPUT -i lo -j ACCEPT
     $IPTABLES -A OUTPUT -o lo -j ACCEPT
@@ -139,6 +133,16 @@ setup_maintenance_rules() {
     # Data Plane SSH (enabled in maintenance)
     $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j ACCEPT
     $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED -j ACCEPT
+
+    # Execution Client P2P
+    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $EL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $EL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE -p udp --dport $EL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE -p udp --sport $EL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
 
     # Enable DNS access (both UDP and TCP)
     # Inbound DNS
@@ -156,7 +160,6 @@ setup_maintenance_rules() {
     # Inbound HTTPS
     $IPTABLES -A $SEARCHER_MODE -p tcp --dport $HTTPS_PORT -j ACCEPT
     $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $HTTPS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-
     # Outbound HTTPS
     $IPTABLES -A $SEARCHER_MODE -p tcp --sport $HTTPS_PORT -j ACCEPT
     $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $HTTPS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
@@ -165,20 +168,9 @@ setup_maintenance_rules() {
     # Inbound HTTP
     $IPTABLES -A $SEARCHER_MODE -p tcp --dport $HTTP_PORT -j ACCEPT
     $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $HTTP_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-
     # Outbound HTTP
     $IPTABLES -A $SEARCHER_MODE -p tcp --sport $HTTP_PORT -j ACCEPT
     $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $HTTP_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-    # Execution Client P2P
-    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $EL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $EL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE -p udp --dport $EL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE -p udp --sport $EL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
 }
 
 # state diff is default blocked at startup
@@ -186,15 +178,6 @@ setup_permanent_rules() {
     # Control Plane SSH (always enabled)
     $IPTABLES -A $SEARCHER_BASE -p tcp --dport $SSH_CONTROL_PORT -j ACCEPT
     $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $SSH_CONTROL_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # RPC Bundle Submission Chain:
-    # Container(8545) -> Host(8555) -> Destination(8565)
-    # Container internal port: 8545 (which is mapped to host 8555 in the podman config)
-    # RPC Bundle Submission Chain (outbound only)
-    # Allow outgoing connections to destination port 8565
-    # PING rpc.flashbots.net (172.67.36.8) 56(84) bytes of data.
-    $IPTABLES -A $SEARCHER_BASE -p tcp -d 172.67.36.8 --dport 443 -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp -s 172.67.36.8 --sport 443 -m state --state ESTABLISHED -j ACCEPT
 
     # Consensus Client P2P
     $IPTABLES -A $SEARCHER_BASE -p tcp --dport $CL_P2P_PORT -j ACCEPT
@@ -206,19 +189,18 @@ setup_permanent_rules() {
     $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p udp --sport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
     $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p udp --dport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
 
-    # # Searcher Input Channels (UDP)
-    # $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_1 -j ACCEPT
-    # $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_2 -j ACCEPT
+    # RPC Bundle Submission Chain:
+    # Container(8545) -> Host(8555) -> Destination(8565)
+    # Container internal port: 8545 (which is mapped to host 8555 in the podman config)
+    # RPC Bundle Submission Chain (outbound only)
+    # Allow outgoing connections to destination port 8565
+    # PING rpc.flashbots.net (172.67.36.8) 56(84) bytes of data.
+    $IPTABLES -A $SEARCHER_BASE -p tcp -d 172.67.36.8 --dport 443 -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp -s 172.67.36.8 --sport 443 -m state --state ESTABLISHED -j ACCEPT
 
-    # # Builder RPC outputs
-    # # FB Builder
-    # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_BUILDER_RPC_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $FB_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
-    # # Titan Builder
-    # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $TITAN_BUILDER_RPC_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $TITAN_BUILDER_RPC_PORT -m state --state ESTABLISHED -j ACCEPT
+    # Searcher Input Channels (UDP)
+    $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_1 -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_2 -j ACCEPT
 }
 
 cleanup_rules() {
