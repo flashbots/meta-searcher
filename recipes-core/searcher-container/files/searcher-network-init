@@ -12,19 +12,23 @@
 # Configuration variables
 PODMAN="/usr/bin/podman"
 IPTABLES="/usr/sbin/iptables"
+IP6TABLES="/usr/sbin/ip6tables"
 CONTAINER_NAME="searcher-container"
 
 # Port configurations
 SSH_CONTROL_PORT=22
 SSH_DATA_PORT=10022
-FB_CL_P2P_PORT=9000
-FB_EL_P2P_PORT=30303
+CL_P2P_PORT=9000
+EL_P2P_PORT=30303
 FB_STATE_DIFF_PORT=8547
 TITAN_STATE_DIFF_PORT=8548
-FB_BUILDER_RPC_PORT=8645
-TITAN_BUILDER_RPC_PORT=8646
+FB_RPC_PORT=8645
+TITAN_RPC_PORT=8646
 SEARCHER_INPUT_PORT_1=27017
 SEARCHER_INPUT_PORT_2=27018
+DNS_PORT=53
+HTTP_PORT=80
+HTTPS_PORT=443
 
 # Chain names for better organization and cleanup
 SEARCHER_INPUT="SEARCHER_INPUT"
@@ -116,10 +120,15 @@ setup_base_rules() {
     $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED
     $IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED
 
-    # Default policy: ACCEPT
-    $IPTABLES -P INPUT ACCEPT
-    $IPTABLES -P FORWARD ACCEPT
-    $IPTABLES -P OUTPUT ACCEPT
+    # Default policy: DROP
+    $IPTABLES -P INPUT DROP
+    $IPTABLES -P FORWARD DROP
+    $IPTABLES -P OUTPUT DROP
+
+    # Default policy: DROP
+    $IP6TABLES -P INPUT DROP
+    $IP6TABLES -P FORWARD DROP
+    $IP6TABLES -P OUTPUT DROP
 
     # Allow loopback
     $IPTABLES -A INPUT -i lo -j ACCEPT
@@ -130,6 +139,46 @@ setup_maintenance_rules() {
     # Data Plane SSH (enabled in maintenance)
     $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j ACCEPT
     $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED -j ACCEPT
+
+    # Enable DNS access (both UDP and TCP)
+    # Inbound DNS
+    $IPTABLES -A $SEARCHER_MODE -p udp --dport $DNS_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $DNS_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --sport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    # Outbound DNS
+    $IPTABLES -A $SEARCHER_MODE -p udp --sport $DNS_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $DNS_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --dport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    
+    # Enable HTTPS access
+    # Inbound HTTPS
+    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $HTTPS_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $HTTPS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+    # Outbound HTTPS
+    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $HTTPS_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $HTTPS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+    # Enable HTTP access
+    # Inbound HTTP
+    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $HTTP_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $HTTP_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+    # Outbound HTTP
+    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $HTTP_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $HTTP_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+    # Execution Client P2P
+    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $EL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $EL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE -p udp --dport $EL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE -p udp --sport $EL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
 }
 
 # state diff is default blocked at startup
@@ -147,15 +196,15 @@ setup_permanent_rules() {
     $IPTABLES -A $SEARCHER_BASE -p tcp -d 172.67.36.8 --dport 443 -j ACCEPT
     $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp -s 172.67.36.8 --sport 443 -m state --state ESTABLISHED -j ACCEPT
 
-    # # Consensus Client P2P
-    # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_CL_P2P_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $FB_CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # # Execution Client P2P
-    # $IPTABLES -A $SEARCHER_BASE -p tcp --dport $FB_EL_P2P_PORT -j ACCEPT
-    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    # $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $FB_EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    # Consensus Client P2P
+    $IPTABLES -A $SEARCHER_BASE -p tcp --dport $CL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE -p tcp --sport $CL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE -p udp --dport $CL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE -p udp --sport $CL_P2P_PORT -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p udp --sport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
+    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p udp --dport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
 
     # # Searcher Input Channels (UDP)
     # $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_1 -j ACCEPT
