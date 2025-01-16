@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         else if (strcmp(command, "status") == 0) {
-            execl("/bin/cat", "cat", "/tmp/searcher-network.state", NULL);
+            execl("/bin/cat", "cat", "/etc/searcher-network.state", NULL);
             perror("execl failed (status)");
             free(arg_copy);
             return 1;
