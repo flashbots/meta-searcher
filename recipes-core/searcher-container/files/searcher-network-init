@@ -60,60 +60,6 @@ CHAIN_MAINTENANCE_OUT="MAINTENANCE_OUT"
 CHAIN_PRODUCTION_IN="PRODUCTION_IN"
 CHAIN_PRODUCTION_OUT="PRODUCTION_OUT"
 
-# ###############################################################################
-# # Wait for other containers to be ready before starting the firewall
-# ###############################################################################
-# wait_for_container_ready() {
-#     echo "Waiting for '$CONTAINER_NAME' container to be ready..."
-#     max_attempts=10
-#     attempt=1
-    
-#     ssh_ipv4_ready=0
-#     ssh_ipv6_ready=0
-    
-#     while [ $attempt -le $max_attempts ]; do
-#         echo "Attempt $attempt/$max_attempts: Checking container status..."
-#         status=$(su -s /bin/sh searcher -c "$PODMAN container inspect --format '{{.State.Status}}' $CONTAINER_NAME" 2>/dev/null)
-#         if [ "$status" != "running" ]; then
-#             echo "Container status is '$status', waiting for 'running'"
-#             sleep 10
-#             attempt=$((attempt + 1))
-#             continue
-#         fi
-
-#         echo "Container status is 'running'"
-
-#         # Retrieve container logs
-#         su -s /bin/sh searcher -c "$PODMAN logs $CONTAINER_NAME 2>&1" > /tmp/container.log
-        
-#         # Detect SSH server readiness
-#         if grep -q "Server listening on 0.0.0.0 port 22" /tmp/container.log; then
-#             ssh_ipv4_ready=1
-#         fi
-#         if grep -q "Server listening on :: port 22" /tmp/container.log; then
-#             ssh_ipv6_ready=1
-#         fi
-
-#         echo "Container log readiness state:"
-#         echo " - IPv4 SSH server: $([[ $ssh_ipv4_ready -eq 1 ]] && echo 'Ready' || echo 'Waiting')"
-#         echo " - IPv6 SSH server: $([[ $ssh_ipv6_ready -eq 1 ]] && echo 'Ready' || echo 'Waiting')"
-
-#         if [ $ssh_ipv4_ready -eq 1 ] && [ $ssh_ipv6_ready -eq 1 ]; then
-#             echo "Container initialization complete."
-#             rm -f /tmp/container.log
-#             return 0
-#         fi
-        
-#         sleep 10
-#         attempt=$((attempt + 1))
-#     done
-
-#     echo "Container failed to become ready within timeout."
-#     rm -f /tmp/container.log
-#     return 1
-# }
-
-
 ###############################################################################
 # START FIREWALL
 ###############################################################################
@@ -304,10 +250,6 @@ stop_firewall() {
 ###############################################################################
 case "$1" in
     start)
-        # if ! wait_for_container_ready; then
-        #     echo "Error: Container not ready, cannot proceed with network setup."
-        #     exit 1
-        # fi
         start_firewall
         ;;
     stop)
