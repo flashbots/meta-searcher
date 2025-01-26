@@ -1,4 +1,14 @@
 #!/bin/sh
+#
+# Mode Switching Script
+#
+# Switch Paths:
+# 1) "production" -> "stopped"
+# 2) "stopped" -> "maintenance" (two minute delay)
+# 3) "maintenance" -> "production"
+# 
+# Terminating NEW connections: Uses MODE_SELECTOR IN/OUT chain jumps to MAINTENANCE_IN/OUT or PRODUCTION_IN/OUT rule sets
+# Terminating ESTABLISHED/RELATED connections: Uses conntrack to kill all current connections by port
 
 # We must be root to change iptable rules
 # Check if we're root, if not, fail
@@ -7,31 +17,41 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
+###############################################################################
+# Configuration
+###############################################################################
+
+# Delay implementationfiles
 LOCK_FILE="/etc/searcher-network.lock"
 STATE_FILE="/etc/searcher-network.state"
 TIMESTAMP_FILE="/etc/searcher-network-last-stop.timestamp"
 
-PODMAN="/usr/bin/podman"
-CONTAINER_NAME="searcher-container"
+# Tools
 IPTABLES="/usr/sbin/iptables"
+CONNTRACK="/usr/sbin/conntrack"
 
-# iptable chain names
-SEARCHER_INPUT="SEARCHER_INPUT"
-SEARCHER_OUTPUT="SEARCHER_OUTPUT"
-SEARCHER_MODE="SEARCHER_MODE" 
-SEARCHER_BASE="SEARCHER_BASE"     
-SEARCHER_BASE_ESTABLISHED="SEARCHER_BASE_ESTABLISHED"
-SEARCHER_MODE_ESTABLISHED="SEARCHER_MODE_ESTABLISHED"
+# Chains
+CHAIN_MODE_SELECTOR_IN="MODE_SELECTOR_IN"
+CHAIN_MODE_SELECTOR_OUT="MODE_SELECTOR_OUT"
+CHAIN_MAINTENANCE_IN="MAINTENANCE_IN"
+CHAIN_MAINTENANCE_OUT="MAINTENANCE_OUT"
+CHAIN_PRODUCTION_IN="PRODUCTION_IN"
+CHAIN_PRODUCTION_OUT="PRODUCTION_OUT"
 
-# Port configurations
+# Maintenance ports
 SSH_DATA_PORT=10022
-FB_STATE_DIFF_PORT=8547
-TITAN_STATE_DIFF_PORT=8548
-EL_P2P_PORT=30303
 DNS_PORT=53
-HTTPS_PORT=443
 HTTP_PORT=80
+HTTPS_PORT=443
+EL_P2P_PORT=30303
 
+# Production ports
+FB_STATE_DIFF_PORT=8547
+TITAN_STATE_DIFF_PORT=42202
+
+###############################################################################
+# Delay between stopping and starting maintenance
+###############################################################################
 with_lock() {
     (
         flock -x 200
@@ -73,74 +93,67 @@ check_delay() {
     return 0
 }
 
-# New function to manage iptables rules
-configure_mode_rules() {
-    local mode=$1
-    
-    # First, flush mode-specific rules
-    $IPTABLES -F $SEARCHER_MODE
-    $IPTABLES -F $SEARCHER_MODE_ESTABLISHED
-    
-    # Add new rules based on mode
-    if [ "$mode" = "maintenance" ]; then
-        # Then enable SSH access
-        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
+###############################################################################
+# Kill established connections via conntrack
+###############################################################################
+kill_established_connections() {
+    local old_mode="$1"
+    if [ "$old_mode" = "production" ]; then
+        echo "Killing leftover production flows (ports $FB_STATE_DIFF_PORT, $TITAN_STATE_DIFF_PORT)..."
+        $CONNTRACK -D -p tcp --dport $FB_STATE_DIFF_PORT 2>/dev/null
+        $CONNTRACK -D -p tcp --dport $TITAN_STATE_DIFF_PORT 2>/dev/null
 
-        # Execution Client P2P
-        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $EL_P2P_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE -p tcp --sport $EL_P2P_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE -p udp --dport $EL_P2P_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE -p udp --sport $EL_P2P_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-        
-        # Enable DNS access (both UDP and TCP)
-        # Inbound DNS
-        $IPTABLES -A $SEARCHER_MODE -p udp --dport $DNS_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $DNS_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --sport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        # Outbound DNS
-        $IPTABLES -A $SEARCHER_MODE -p udp --sport $DNS_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE -p tcp --sport $DNS_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --dport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        
-        # Enable HTTPS access
-        # Inbound HTTPS
-        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $HTTPS_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $HTTPS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        # Outbound HTTPS
-        $IPTABLES -A $SEARCHER_MODE -p tcp --sport $HTTPS_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $HTTPS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-        # Enable HTTP access
-        # Inbound HTTP
-        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $HTTP_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $HTTP_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        # Outbound HTTP
-        $IPTABLES -A $SEARCHER_MODE -p tcp --sport $HTTP_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $HTTP_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        
-    elif [ "$mode" = "production" ]; then
-        # Enable state diff streams
-        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        
-    else  # stopped state
-        # Drop SSH connections
-        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j DROP
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -j DROP
-
-        # Drop state diff connections
-        $IPTABLES -A $SEARCHER_MODE -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $FB_STATE_DIFF_PORT -j DROP
-        $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $FB_STATE_DIFF_PORT -j DROP
+    elif [ "$old_mode" = "maintenance" ]; then
+        echo "Killing leftover maintenance flows:"
+        echo " - SSH data port $SSH_DATA_PORT"
+        echo " - DNS $DNS_PORT, HTTP $HTTP_PORT, HTTPS $HTTPS_PORT, EL P2P $EL_P2P_PORT"
+        # SSH data plane
+        $CONNTRACK -D -p tcp --dport $SSH_DATA_PORT 2>/dev/null
+        # DNS
+        $CONNTRACK -D -p tcp --dport $DNS_PORT 2>/dev/null
+        $CONNTRACK -D -p udp --dport $DNS_PORT 2>/dev/null
+        # HTTP/HTTPS
+        $CONNTRACK -D -p tcp --dport $HTTP_PORT 2>/dev/null
+        $CONNTRACK -D -p tcp --dport $HTTPS_PORT 2>/dev/null
+        # EL P2P
+        $CONNTRACK -D -p tcp --dport $EL_P2P_PORT 2>/dev/null
+        $CONNTRACK -D -p udp --dport $EL_P2P_PORT 2>/dev/null
     fi
+    # if old_mode="stopped", nothing to kill
+}
+###############################################################################
+# Toggle the iptables chain jumps
+###############################################################################
+configure_mode_rules() {
+    local new_mode="$1"
+    local old_mode="$2"
+    
+    # 1) Kill all established flows from old mode
+    kill_established_connections "$old_mode"
+
+    # 2) Flush the mode selector so we remove references to the old sub-chain
+    $IPTABLES -F $CHAIN_MODE_SELECTOR_IN
+    $IPTABLES -F $CHAIN_MODE_SELECTOR_OUT
+
+    # 3) Depending on new_mode, jump to the matching sub-chains
+    case "$new_mode" in
+      maintenance)
+        $IPTABLES -A $CHAIN_MODE_SELECTOR_IN  -j $CHAIN_MAINTENANCE_IN
+        $IPTABLES -A $CHAIN_MODE_SELECTOR_OUT -j $CHAIN_MAINTENANCE_OUT
+        ;;
+      production)
+        $IPTABLES -A $CHAIN_MODE_SELECTOR_IN  -j $CHAIN_PRODUCTION_IN
+        $IPTABLES -A $CHAIN_MODE_SELECTOR_OUT -j $CHAIN_PRODUCTION_OUT
+        ;;
+      stopped)
+        # No jump => default DROP. 
+        ;;
+      *)
+        echo "Unknown mode $new_mode in configure_mode_rules"
+        return 1
+        ;;
+    esac
+    return 0
 }
 
 move_to_production() {
@@ -149,7 +162,7 @@ move_to_production() {
         return 1
     fi
     echo "Moving to production mode..."
-    if configure_mode_rules "production"; then
+    if configure_mode_rules "production" "maintenance"; then
         set_state "production"
         echo "Successfully switched to production mode"
         return 0
@@ -166,7 +179,7 @@ disconnect_from_production() {
         return 1
     fi
     echo "Disconnecting from production mode..."
-    if configure_mode_rules "stopped"; then
+    if configure_mode_rules "stopped" "production"; then
         set_state "stopped"
         echo "Successfully disconnected from production mode"
         return 0
@@ -185,7 +198,7 @@ connect_to_maintenance() {
         return 1
     fi
     echo "Connecting to maintenance mode..."
-    if configure_mode_rules "maintenance"; then
+    if configure_mode_rules "maintenance" "stopped"; then
         set_state "maintenance"
         rm -f "$TIMESTAMP_FILE"  # Clear timestamp after successful use
         echo "Successfully connected to maintenance mode"

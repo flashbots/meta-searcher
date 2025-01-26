@@ -12,33 +12,24 @@
 DAEMON=/usr/bin/podman
 USER=searcher
 NAME=searcher-container
+
+# PORT FORWARDS
 SEARCHER_SSH_PORT=10022
-FB_STATE_DIFF_PORT=8547
-TITAN_STATE_DIFF_PORT=8548
-FB_RPC_PORT=10000 # temp since our http server is on 8645
-TITAN_RPC_PORT=8646
-EL_P2P_PORT=30303
 ENGINE_API_PORT=8551
-SEARCHER_INPUT_PORT_1=27017
-SEARCHER_INPUT_PORT_2=27018
-IPTABLES="/usr/sbin/iptables"
+EL_P2P_PORT=30303
 
 case "$1" in
     start)
 
         mkdir -p /etc/searcher/ssh_hostkey
         chown searcher:searcher /etc/searcher/ssh_hostkey   
-        
+
         echo "Starting $NAME..."
         su -s /bin/sh $USER -c "cd ~ && $DAEMON run -d \
             --name $NAME \
             -p ${SEARCHER_SSH_PORT}:22 \
-            -p ${FB_STATE_DIFF_PORT}:${FB_STATE_DIFF_PORT} \
-            -p ${TITAN_STATE_DIFF_PORT}:${TITAN_STATE_DIFF_PORT} \
-            -p ${FB_RPC_PORT}:${FB_RPC_PORT} \
-            -p ${TITAN_RPC_PORT}:${TITAN_RPC_PORT} \
-            -p ${EL_P2P_PORT}:${EL_P2P_PORT} \
             -p ${ENGINE_API_PORT}:${ENGINE_API_PORT} \
+            -p ${EL_P2P_PORT}:${EL_P2P_PORT} \
             -v /etc/searcher_key:/container_auth_keys:ro \
             -v /persistent:/persistent \
             -v /etc/searcher/ssh_hostkey:/etc/searcher/ssh_hostkey:rw \

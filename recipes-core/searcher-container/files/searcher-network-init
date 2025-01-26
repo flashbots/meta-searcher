@@ -5,259 +5,317 @@
 # Required-Stop:     $network
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: Searcher Network Configuration
-# Description:       Sets up iptables rules for searcher container
+# Short-Description: Sets up iptables for maintenance/production with separate inbound/outbound chains
 ### END INIT INFO
 
-# Configuration variables
-PODMAN="/usr/bin/podman"
+###############################################################################
+# Binaries
+###############################################################################
 IPTABLES="/usr/sbin/iptables"
+IP6TABLES="/usr/sbin/ip6tables"
+CONNTRACK="/usr/sbin/conntrack"
+PODMAN="/usr/bin/podman"
 CONTAINER_NAME="searcher-container"
 
-# Port configurations
-SSH_CONTROL_PORT=22
-SSH_DATA_PORT=10022
-CL_P2P_PORT=9000
-EL_P2P_PORT=30303
-FB_STATE_DIFF_PORT=8547
-TITAN_STATE_DIFF_PORT=8548
-FB_RPC_PORT=8645
-TITAN_RPC_PORT=8646
-SEARCHER_INPUT_PORT_1=27017
-SEARCHER_INPUT_PORT_2=27018
-DNS_PORT=53
-HTTP_PORT=80
-HTTPS_PORT=443
+###############################################################################
+# Builder IP Addresses
+###############################################################################
+FLASHBOTS_BUILDER_IP="131.153.11.211"
+TITAN_BUILDER_IP="52.207.17.217"
 
-# Chain names for better organization and cleanup
-SEARCHER_INPUT="SEARCHER_INPUT"
-SEARCHER_OUTPUT="SEARCHER_OUTPUT"
-SEARCHER_MODE="SEARCHER_MODE"      # Mode-specific rules chain
-SEARCHER_BASE="SEARCHER_BASE"      # Permanent rules chain
-SEARCHER_BASE_ESTABLISHED="SEARCHER_BASE_ESTABLISHED" 
-SEARCHER_MODE_ESTABLISHED="SEARCHER_MODE_ESTABLISHED"  
+###############################################################################
+# Ports
+###############################################################################
+SSH_CONTROL_PORT=22        # Inbound: SSH control plane (always on)
+SSH_DATA_PORT=10022        # Inbound: SSH data plane (maintenance mode only)
 
-# make sure the container and openssh server is ready before we start setting up the restrictive firewall rules
-wait_for_container_ready() {
-    echo "Waiting for searcher container to be ready..."
-    max_attempts=10
-    attempt=1
+CL_P2P_PORT=9000           # TCP/UDP inbound/outbound: Consensus client P2P (always on)
+EL_P2P_PORT=30303          # TCP/UDP outbound: Execution client P2P (maintenance mode only)
+
+DNS_PORT=53                # Outbound: DNS (maintenance mode only)
+HTTP_PORT=80               # Outbound: HTTP (maintenance mode only)
+HTTPS_PORT=443             # Outbound: HTTPS (maintenance mode only)
+
+SEARCHER_INPUT_CHANNEL=27017  # Inbound: Input Only Channel (always on)
+
+FLASHBOTS_STATE_DIFF=8547        # Outbound: Flashbots builder state diff (production only)
+FLASHBOTS_BUNDLE_ENDPOINT=8645   # Outbound: Flashbots builder bundle submission (production only)
+TITAN_STATE_DIFF=42202           # Outbound: Titan builder state diff (production only)
+TITAN_BUNDLE_ENDPOINT=1337       # Outbound: Titan builder bundle submission (production only)
+
+CVM_REVERSE_PROXY_PORT=8745      # Inbound: CVM reverse proxy (always on)
+
+###############################################################################
+# Custom Chains
+###############################################################################
+CHAIN_ALWAYS_ON_IN="ALWAYS_ON_IN"
+CHAIN_ALWAYS_ON_OUT="ALWAYS_ON_OUT"
+
+CHAIN_MODE_SELECTOR_IN="MODE_SELECTOR_IN"
+CHAIN_MODE_SELECTOR_OUT="MODE_SELECTOR_OUT"
+
+CHAIN_MAINTENANCE_IN="MAINTENANCE_IN"
+CHAIN_MAINTENANCE_OUT="MAINTENANCE_OUT"
+
+CHAIN_PRODUCTION_IN="PRODUCTION_IN"
+CHAIN_PRODUCTION_OUT="PRODUCTION_OUT"
+
+# ###############################################################################
+# # Wait for other containers to be ready before starting the firewall
+# ###############################################################################
+# wait_for_container_ready() {
+#     echo "Waiting for '$CONTAINER_NAME' container to be ready..."
+#     max_attempts=10
+#     attempt=1
     
-    # Initialize flags
-    ssh_ipv4_ready=0
-    ssh_ipv6_ready=0
+#     ssh_ipv4_ready=0
+#     ssh_ipv6_ready=0
     
-    while [ $attempt -le $max_attempts ]; do
-        echo "Attempt $attempt/$max_attempts: Checking container status..."
-        status=$(su -s /bin/sh searcher -c "$PODMAN container inspect --format '{{.State.Status}}' $CONTAINER_NAME" 2>/dev/null)
-        if [ "$status" != "running" ]; then
-            echo "Container status is '$status', waiting for 'running'"
-            sleep 10
-            attempt=$((attempt + 1))
-            continue
-        fi
-        echo "Container status is 'running'"
+#     while [ $attempt -le $max_attempts ]; do
+#         echo "Attempt $attempt/$max_attempts: Checking container status..."
+#         status=$(su -s /bin/sh searcher -c "$PODMAN container inspect --format '{{.State.Status}}' $CONTAINER_NAME" 2>/dev/null)
+#         if [ "$status" != "running" ]; then
+#             echo "Container status is '$status', waiting for 'running'"
+#             sleep 10
+#             attempt=$((attempt + 1))
+#             continue
+#         fi
 
-        # Get logs into a file with both stdout and stderr
-        su -s /bin/sh searcher -c "$PODMAN logs $CONTAINER_NAME 2>&1" > /tmp/container.log
+#         echo "Container status is 'running'"
+
+#         # Retrieve container logs
+#         su -s /bin/sh searcher -c "$PODMAN logs $CONTAINER_NAME 2>&1" > /tmp/container.log
         
-        # Set flags based on grep results
-        if grep -q "Server listening on 0.0.0.0 port 22" /tmp/container.log; then
-            ssh_ipv4_ready=1
-        fi
+#         # Detect SSH server readiness
+#         if grep -q "Server listening on 0.0.0.0 port 22" /tmp/container.log; then
+#             ssh_ipv4_ready=1
+#         fi
+#         if grep -q "Server listening on :: port 22" /tmp/container.log; then
+#             ssh_ipv6_ready=1
+#         fi
+
+#         echo "Container log readiness state:"
+#         echo " - IPv4 SSH server: $([[ $ssh_ipv4_ready -eq 1 ]] && echo 'Ready' || echo 'Waiting')"
+#         echo " - IPv6 SSH server: $([[ $ssh_ipv6_ready -eq 1 ]] && echo 'Ready' || echo 'Waiting')"
+
+#         if [ $ssh_ipv4_ready -eq 1 ] && [ $ssh_ipv6_ready -eq 1 ]; then
+#             echo "Container initialization complete."
+#             rm -f /tmp/container.log
+#             return 0
+#         fi
         
-        if grep -q "Server listening on :: port 22" /tmp/container.log; then
-            ssh_ipv6_ready=1
-        fi
+#         sleep 10
+#         attempt=$((attempt + 1))
+#     done
 
-        echo "Current initialization state:"
-        echo "- IPv4 SSH server: $([[ $ssh_ipv4_ready -eq 1 ]] && echo "Ready" || echo "Waiting")"
-        echo "- IPv6 SSH server: $([[ $ssh_ipv6_ready -eq 1 ]] && echo "Ready" || echo "Waiting")"
+#     echo "Container failed to become ready within timeout."
+#     rm -f /tmp/container.log
+#     return 1
+# }
 
-        # If all required messages have been seen, container is ready
-        if [ $ssh_ipv4_ready -eq 1 ] && [ $ssh_ipv6_ready -eq 1 ]; then
-            echo "Container initialization complete"
-            rm -f /tmp/container.log
-            return 0
-        fi
-        
-        sleep 10
-        attempt=$((attempt + 1))
-    done
 
-    echo "Container failed to become ready within timeout"
-    rm -f /tmp/container.log
-    return 1
-}
+###############################################################################
+# START FIREWALL
+###############################################################################
+start_firewall() {
+    echo "Initializing firewall with separate inbound/outbound chains..."
 
-setup_base_rules() {
-    # Create custom chains
-    for chain in $SEARCHER_MODE $SEARCHER_BASE $SEARCHER_INPUT $SEARCHER_OUTPUT $SEARCHER_BASE_ESTABLISHED $SEARCHER_MODE_ESTABLISHED; do
-        $IPTABLES -N $chain 2>/dev/null || true
-        $IPTABLES -F $chain
-    done
-
-    # Link custom chains
-    # All incoming traffic is routed to the searcher input chain
-    $IPTABLES -A INPUT -j $SEARCHER_INPUT
-    # All outgoing traffic is routed to the searcher output chain
-    $IPTABLES -A OUTPUT -j $SEARCHER_OUTPUT
-
-    # Mode-specific rules are evaluated first
-    $IPTABLES -A $SEARCHER_INPUT -j $SEARCHER_MODE
-    $IPTABLES -A $SEARCHER_OUTPUT -j $SEARCHER_MODE
-
-    # Permanent rules are evaluated second
-    $IPTABLES -A $SEARCHER_INPUT -j $SEARCHER_BASE
-    $IPTABLES -A $SEARCHER_OUTPUT -j $SEARCHER_BASE
-    
-    # Split established connections into mode and base
-    # Mode-specific established connections are checked first
-    $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_MODE_ESTABLISHED
-    $IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_MODE_ESTABLISHED
-    # Base established connections are checked second
-    $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED
-    $IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED
-
-    # Default policy: DROP
+    ###########################################################################
+    # (1) Set default policies to DROP
+    ###########################################################################
     $IPTABLES -P INPUT DROP
     $IPTABLES -P FORWARD DROP
     $IPTABLES -P OUTPUT DROP
 
-    # Allow loopback
-    $IPTABLES -A INPUT -i lo -j ACCEPT
+    # TODO: IPv6 support and blocking
+    # $IP6TABLES -P INPUT DROP
+    # $IP6TABLES -P FORWARD DROP
+    # $IP6TABLES -P OUTPUT DROP
+
+    ###########################################################################
+    # (2) Flush any existing rules/chains
+    ###########################################################################
+    $IPTABLES -F
+    $IPTABLES -X
+
+    ###########################################################################
+    # (3) Create custom chains
+    ###########################################################################
+    for CHAIN in \
+        $CHAIN_ALWAYS_ON_IN $CHAIN_ALWAYS_ON_OUT \
+        $CHAIN_MODE_SELECTOR_IN $CHAIN_MODE_SELECTOR_OUT \
+        $CHAIN_MAINTENANCE_IN $CHAIN_MAINTENANCE_OUT \
+        $CHAIN_PRODUCTION_IN $CHAIN_PRODUCTION_OUT
+    do
+        $IPTABLES -N $CHAIN
+    done
+
+    ###########################################################################
+    # (4) Allow Established/Related connections (Inbound & Outbound)
+    # OUTPUT (always): SSH (22), CL P2P (9000), CVM reverse-proxy (8745)
+    # OUTPUT (maintenance): SSH (10022)
+    ###########################################################################
+    $IPTABLES -A INPUT  -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    $IPTABLES -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+    ###########################################################################
+    # (5) Main Routing:
+    #     INPUT  -> ALWAYS_ON_IN -> MODE_SELECTOR_IN
+    #     OUTPUT -> ALWAYS_ON_OUT -> MODE_SELECTOR_OUT
+    ###########################################################################
+    $IPTABLES -A INPUT -j $CHAIN_ALWAYS_ON_IN
+    $IPTABLES -A INPUT -j $CHAIN_MODE_SELECTOR_IN
+
+    $IPTABLES -A OUTPUT -j $CHAIN_ALWAYS_ON_OUT
+    $IPTABLES -A OUTPUT -j $CHAIN_MODE_SELECTOR_OUT
+
+    ###########################################################################
+    # (6) ALWAYS_ON_IN: Inbound rules that never turn off
+    ###########################################################################
+    # SSH control port (22)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $SSH_CONTROL_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Searcher input channel (UDP on 27017)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p udp --dport $SEARCHER_INPUT_CHANNEL \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Consensus (CL) P2P inbound on port 9000 (TCP + UDP)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $CL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p udp --dport $CL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # CVM reverse-proxy inbound on port 8745 (TCP)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $CVM_REVERSE_PROXY_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from ALWAYS_ON_IN
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -j RETURN
+
+    ###########################################################################
+    # (7) ALWAYS_ON_OUT: Outbound rules that never turn off
+    ###########################################################################
+    # CL P2P outbound on port 9000 (TCP + UDP)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp --dport $CL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p udp --dport $CL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Flashbots & Titan builder bundle endpoints (always on)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_BUNDLE_ENDPOINT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_ENDPOINT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from ALWAYS_ON_OUT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -j RETURN
+
+    ###########################################################################
+    # (8) MAINTENANCE_IN: Inbound rules for Maintenance Mode
+    ###########################################################################
+    # SSH data plane on port 10022
+    $IPTABLES -A $CHAIN_MAINTENANCE_IN -p tcp --dport $SSH_DATA_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # EL P2P inbound on port 30303 (TCP + UDP)
+    $IPTABLES -A $CHAIN_MAINTENANCE_IN -p tcp --dport $EL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_MAINTENANCE_IN -p udp --dport $EL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from MAINTENANCE_IN
+    $IPTABLES -A $CHAIN_MAINTENANCE_IN -j RETURN
+
+    ###########################################################################
+    # (9) MAINTENANCE_OUT: Outbound rules for Maintenance Mode
+    ###########################################################################
+    # DNS (UDP/TCP 53)
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p udp --dport $DNS_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $DNS_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # HTTP / HTTPS
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $HTTP_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $HTTPS_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # EL P2P (30303) outbound only in Maintenance
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $EL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p udp --dport $EL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from MAINTENANCE_OUT
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -j RETURN
+
+    ###########################################################################
+    # (10) PRODUCTION_IN: Inbound rules for Production Mode
+    ###########################################################################
+    $IPTABLES -A $CHAIN_PRODUCTION_IN -j RETURN
+
+    ###########################################################################
+    # (11) PRODUCTION_OUT: Outbound rules for Production Mode
+    # IP whitelisted for builder IPs
+    ###########################################################################
+    # Flashbots state diff
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_STATE_DIFF \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Titan state diff
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_STATE_DIFF \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from PRODUCTION_OUT
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -j RETURN
+
+    ###########################################################################
+    # (12) Start in Maintenance Mode
+    ###########################################################################
+    $IPTABLES -A $CHAIN_MODE_SELECTOR_IN  -j $CHAIN_MAINTENANCE_IN
+    $IPTABLES -A $CHAIN_MODE_SELECTOR_OUT -j $CHAIN_MAINTENANCE_OUT
+
+    ###########################################################################
+    # (13) Allow loopback traffic
+    ###########################################################################
+    $IPTABLES -A INPUT  -i lo -j ACCEPT
     $IPTABLES -A OUTPUT -o lo -j ACCEPT
+
+    echo "Firewall initialized in Maintenance Mode."
 }
 
-setup_maintenance_rules() {
-    # Data Plane SSH (enabled in maintenance)
-    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $SSH_DATA_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $SSH_DATA_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # Execution Client P2P
-    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $EL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $EL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE -p udp --dport $EL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE -p udp --sport $EL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --sport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --dport $EL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # Enable DNS access (both UDP and TCP)
-    # Inbound DNS
-    $IPTABLES -A $SEARCHER_MODE -p udp --dport $DNS_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $DNS_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --sport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    # Outbound DNS
-    $IPTABLES -A $SEARCHER_MODE -p udp --sport $DNS_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $DNS_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p udp --dport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $DNS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    
-    # Enable HTTPS access
-    # Inbound HTTPS
-    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $HTTPS_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $HTTPS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    # Outbound HTTPS
-    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $HTTPS_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $HTTPS_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-    # Enable HTTP access
-    # Inbound HTTP
-    $IPTABLES -A $SEARCHER_MODE -p tcp --dport $HTTP_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --sport $HTTP_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    # Outbound HTTP
-    $IPTABLES -A $SEARCHER_MODE -p tcp --sport $HTTP_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_MODE_ESTABLISHED -p tcp --dport $HTTP_PORT -m state --state ESTABLISHED,RELATED -j ACCEPT
-}
-
-# state diff is default blocked at startup
-setup_permanent_rules() {
-    # Control Plane SSH (always enabled)
-    $IPTABLES -A $SEARCHER_BASE -p tcp --dport $SSH_CONTROL_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $SSH_CONTROL_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # Consensus Client P2P
-    $IPTABLES -A $SEARCHER_BASE -p tcp --dport $CL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE -p tcp --sport $CL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE -p udp --dport $CL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE -p udp --sport $CL_P2P_PORT -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --sport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp --dport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p udp --sport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p udp --dport $CL_P2P_PORT -m state --state ESTABLISHED -j ACCEPT
-
-    # RPC Bundle Submission Chain:
-    # Container(8545) -> Host(8555) -> Destination(8565)
-    # Container internal port: 8545 (which is mapped to host 8555 in the podman config)
-    # RPC Bundle Submission Chain (outbound only)
-    # Allow outgoing connections to destination port 8565
-    # PING rpc.flashbots.net (172.67.36.8) 56(84) bytes of data.
-    $IPTABLES -A $SEARCHER_BASE -p tcp -d 172.67.36.8 --dport 443 -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE_ESTABLISHED -p tcp -s 172.67.36.8 --sport 443 -m state --state ESTABLISHED -j ACCEPT
-
-    # Searcher Input Channels (UDP)
-    $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_1 -j ACCEPT
-    $IPTABLES -A $SEARCHER_BASE -p udp --dport $SEARCHER_INPUT_PORT_2 -j ACCEPT
-}
-
-cleanup_rules() {
-    # Remove custom chains from main chains
-    $IPTABLES -D INPUT -j $SEARCHER_INPUT 2>/dev/null || true
-    $IPTABLES -D OUTPUT -j $SEARCHER_OUTPUT 2>/dev/null || true
-    $IPTABLES -D INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_MODE_ESTABLISHED 2>/dev/null || true
-    $IPTABLES -D OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_MODE_ESTABLISHED 2>/dev/null || true
-    $IPTABLES -D INPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED 2>/dev/null || true
-    $IPTABLES -D OUTPUT -m state --state ESTABLISHED,RELATED -j $SEARCHER_BASE_ESTABLISHED 2>/dev/null || true
-
-    # Flush and delete custom chains
-    for chain in $SEARCHER_MODE $SEARCHER_BASE $SEARCHER_INPUT $SEARCHER_OUTPUT $SEARCHER_BASE_ESTABLISHED $SEARCHER_MODE_ESTABLISHED; do
-        $IPTABLES -F $chain 2>/dev/null || true
-        $IPTABLES -X $chain 2>/dev/null || true
-    done
-
-    # Reset default policies
+###############################################################################
+# STOP FIREWALL
+###############################################################################
+stop_firewall() {
+    echo "Flushing all firewall rules..."
+    $IPTABLES -F
+    $IPTABLES -X
     $IPTABLES -P INPUT DROP
     $IPTABLES -P FORWARD DROP
     $IPTABLES -P OUTPUT DROP
+    echo "Firewall stopped (default DROP)."
 }
 
+###############################################################################
+# MAIN HANDLER
+###############################################################################
 case "$1" in
     start)
-        if ! wait_for_container_ready; then
-            echo "Container is not ready, cannot proceed with network setup"
-            exit 1
-        fi
-
-        echo "Setting up searcher network rules..."
-        if setup_base_rules && setup_maintenance_rules && setup_permanent_rules; then
-            echo "Network setup completed successfully"
-            exit 0
-        else
-            echo "Failed to setup network rules"
-            exit 1
-        fi
+        # if ! wait_for_container_ready; then
+        #     echo "Error: Container not ready, cannot proceed with network setup."
+        #     exit 1
+        # fi
+        start_firewall
         ;;
     stop)
-        echo "Cleaning up searcher network rules..."
-        if cleanup_rules; then
-            echo "Network rules cleanup completed successfully"
-            exit 0
-        else
-            echo "Failed to cleanup network rules"
-            exit 1
-        fi
+        stop_firewall
         ;;
     status)
-        echo "Current iptables rules:"
-        $IPTABLES -L -v -n
-        echo "\nCustom chains:"
-        $IPTABLES -L $SEARCHER_INPUT -v -n
-        $IPTABLES -L $SEARCHER_OUTPUT -v -n
-        $IPTABLES -L $SEARCHER_MODE_ESTABLISHED -v -n
-        $IPTABLES -L $SEARCHER_BASE_ESTABLISHED -v -n
+        echo "=== iptables -L -n -v ==="
+        $IPTABLES -L -n -v
         ;;
     *)
         echo "Usage: $0 {start|stop|status}"
