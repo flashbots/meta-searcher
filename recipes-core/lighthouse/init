@@ -34,10 +34,10 @@ monitor_and_restart() {
 start_lighthouse() {
 		start-stop-daemon -S --make-pidfile -p $PIDFILE -N -10 -b -a /bin/sh -- -c "exec ${DAEMON} \
 		bn \
-		--eth1 \
-		--checkpoint-sync-url https://mainnet.checkpoint.sigp.io \
+		--network mainnet \
 		--execution-endpoint http://localhost:8551 \
 		--execution-jwt $JWT_SECRET_FILE \
+        --checkpoint-sync-url https://mainnet.checkpoint.sigp.io \
 		--disable-deposit-contract-sync \
 		--datadir "$LIGHTHOUSE_DIR" \
 		2>&1 | tee ${LOGFILE}"
