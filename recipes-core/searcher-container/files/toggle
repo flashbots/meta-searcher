@@ -156,11 +156,57 @@ configure_mode_rules() {
     return 0
 }
 
+###############################################################################
+# Container Namespace Rule Verification
+###############################################################################
+check_searcher_namespace_rules() {
+    local cont_name="searcher-container"
+    local user="searcher"
+    local daemon="/usr/bin/podman"
+
+    # 1) Check container status
+    local status
+    status=$(su -s /bin/sh - $user -c "$daemon inspect --format '{{.State.Status}}' $cont_name 2>/dev/null" || true)
+    if [ "$status" != "running" ]; then
+        echo "ERROR: '$cont_name' container is not running; cannot verify rules."
+        return 1
+    fi
+
+    # 2) Retrieve the container PID
+    local pid
+    pid=$(su -s /bin/sh - $user -c "$daemon inspect --format '{{.State.Pid}}' $cont_name 2>/dev/null" || true)
+    if [ -z "$pid" ] || [ "$pid" = "0" ]; then
+        echo "ERROR: Could not retrieve PID for '$cont_name'."
+        return 1
+    fi
+
+    # 3) Check if the DROP rule on port 9000 is present in OUTPUT chain
+    #    -C (check) returns 0 if a matching rule is found, 1 otherwise
+    if nsenter --target "$pid" --net $IPTABLES -C OUTPUT -p tcp --dport 9000 -j DROP 2>/dev/null \
+       && nsenter --target "$pid" --net $IPTABLES -C OUTPUT -p udp --dport 9000 -j DROP 2>/dev/null; then
+        echo "OK: searcher-container firewall rules (DROP tcp/udp port 9000) are ACTIVE."
+        return 0
+    else
+        echo "WARNING: One or both searcher-container firewall rules (DROP port 9000) are NOT found."
+        return 1
+    fi
+}
+
+###############################################################################
+# Mode Switching Functions
+###############################################################################
 move_to_production() {
     if [ "$(get_state)" != "maintenance" ]; then
         echo "Error: Can only move to production from maintenance state"
         return 1
     fi
+
+    # Check the searcher-container-netns iptables rules are active first:
+    if ! check_searcher_namespace_rules; then
+        echo "Error: Required searcher-container-netns iptables rules not active!"
+        return 1
+    fi
+
     echo "Moving to production mode..."
     if configure_mode_rules "production" "maintenance"; then
         set_state "production"
