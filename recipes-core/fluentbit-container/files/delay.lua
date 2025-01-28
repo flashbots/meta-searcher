@@ -1,50 +1,58 @@
--- A multi-record delay script for Fluent Bit.
+-- Local variables
+-- Lua script stays in memory for the lifetime of the Fluent Bit process,
+-- so all local variables persist across filter calls.
 
--- Store logs in a global buffer until they're old enough
-buffer = {}
+local DELAY_SEC = 120 -- Delay (in seconds) before flushing logs
+local buckets = {} -- Table to bucket logs by their timestamp (seconds)
+local earliest_sec = nil -- Tracks the earliest second we have in our buckets table
+local last_processed_second = nil -- Tracks which second we last ran the flush logic on
 
-local DELAY_SEC = 10
-
+-- Lua Filter function
 function log_delay(tag, ts_table, record)
     -- Current time in integer seconds
     local now_sec = os.time()
-
-    -- Capture the log arrival time (from Fluent Bit's time_as_table)
+    local now_floor = now_sec  
     local arrival_sec = ts_table.sec or 0
-
-    -- Add to our buffer
-    table.insert(buffer, {
-        arrival_time = arrival_sec,
-        record       = record
-    })
-
-    -- Build a list of logs to flush (>= DELAY_SEC old),
-    -- and a list of logs that still need to wait.
-    local to_emit = {}
-    local still_waiting = {}
-
-    for _, item in ipairs(buffer) do
-        local age = now_sec - item.arrival_time
-        if age >= DELAY_SEC then
-            table.insert(to_emit, item.record)
-        else
-            table.insert(still_waiting, item)
-        end
+    if earliest_sec == nil or arrival_sec < earliest_sec then
+        earliest_sec = arrival_sec
     end
 
-    -- Keep the waiting logs in the buffer
-    buffer = still_waiting
+    -- 1) Insert the new record into its bucket
+    if not buckets[arrival_sec] then
+        buckets[arrival_sec] = {}
+    end
+    table.insert(buckets[arrival_sec], record)
 
-    -- If no logs are old enough, simply produce *no* records.
-    -- lua code=2 => "use the same timestamp, replace the record with an array".
-    if #to_emit == 0 then
+    -- 2) Check if we've already processed this second
+    if last_processed_second == now_floor then
+        -- Skip the flush; Return no output
         return 2, ts_table, {}
     end
 
-    -- If we have logs old enough to flush, we return them *all* at once.
-    -- lua code=1 => "replace timestamp + record"
-    -- We'll set the new timestamp to 'now' for all flushed logs.
-    local new_ts = { sec = now_sec, nsec = 0 }
-    return 1, new_ts, to_emit
-    
+    -- 3) Otherwise, do the flush logic once for this second
+    last_processed_second = now_floor
+    local to_emit = {}
+
+    -- Flush all buckets whose second <= (now_sec - DELAY_SEC)
+    while earliest_sec and earliest_sec <= (now_sec - DELAY_SEC) do
+        local bucket_logs = buckets[earliest_sec]
+        if bucket_logs then
+            -- Move all logs in this bucket to 'to_emit'
+            for _, old_record in ipairs(bucket_logs) do
+                table.insert(to_emit, old_record)
+            end
+            buckets[earliest_sec] = nil
+        end
+
+        -- Move on to the next second
+        earliest_sec = earliest_sec + 1
+    end
+
+    -- 4) Return any flushed logs
+    if #to_emit == 0 then
+        return 2, ts_table, {}
+    else
+        local new_ts = { sec = now_sec, nsec = 0 }
+        return 1, new_ts, to_emit
+    end
 end
