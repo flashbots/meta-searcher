@@ -1,0 +1,4 @@
+# disable-ipv6.scc
+# This kernel feature file includes our config fragment for IPv6 removal.
+
+include disable-ipv6.cfg
