@@ -1,0 +1,268 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          searcher-network
+# Required-Start:    $network searcher-container
+# Required-Stop:     $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Sets up iptables for maintenance/production with separate inbound/outbound chains
+### END INIT INFO
+
+###############################################################################
+# Binaries
+###############################################################################
+IPTABLES="/usr/sbin/iptables"
+IP6TABLES="/usr/sbin/ip6tables"
+CONNTRACK="/usr/sbin/conntrack"
+PODMAN="/usr/bin/podman"
+CONTAINER_NAME="searcher-container"
+
+###############################################################################
+# Builder IP Addresses
+###############################################################################
+FLASHBOTS_BUILDER_IP="131.153.11.211"
+TITAN_BUILDER_IP="52.207.17.217"
+
+###############################################################################
+# Ports
+###############################################################################
+SSH_CONTROL_PORT=22        # Inbound: SSH control plane (always on)
+SSH_DATA_PORT=10022        # Inbound: SSH data plane (maintenance mode only)
+
+CL_P2P_PORT=9000           # TCP/UDP inbound/outbound: Consensus client P2P (always on)
+EL_P2P_PORT=30303          # TCP/UDP outbound: Execution client P2P (maintenance mode only)
+
+DNS_PORT=53                # Outbound: DNS (maintenance mode only)
+HTTP_PORT=80               # Outbound: HTTP (maintenance mode only)
+HTTPS_PORT=443             # Outbound: HTTPS (maintenance mode only)
+
+SEARCHER_INPUT_CHANNEL=27017  # Inbound: Input Only Channel (always on)
+
+FLASHBOTS_STATE_DIFF=8547        # Outbound: Flashbots builder state diff (production only)
+FLASHBOTS_BUNDLE_ENDPOINT=8645   # Outbound: Flashbots builder bundle submission (production only)
+TITAN_STATE_DIFF=42202           # Outbound: Titan builder state diff (production only)
+TITAN_BUNDLE_ENDPOINT=1337       # Outbound: Titan builder bundle submission (production only)
+
+CVM_REVERSE_PROXY_PORT=8745      # Inbound: CVM reverse proxy (always on)
+
+###############################################################################
+# Custom Chains
+###############################################################################
+CHAIN_ALWAYS_ON_IN="ALWAYS_ON_IN"
+CHAIN_ALWAYS_ON_OUT="ALWAYS_ON_OUT"
+
+CHAIN_MODE_SELECTOR_IN="MODE_SELECTOR_IN"
+CHAIN_MODE_SELECTOR_OUT="MODE_SELECTOR_OUT"
+
+CHAIN_MAINTENANCE_IN="MAINTENANCE_IN"
+CHAIN_MAINTENANCE_OUT="MAINTENANCE_OUT"
+
+CHAIN_PRODUCTION_IN="PRODUCTION_IN"
+CHAIN_PRODUCTION_OUT="PRODUCTION_OUT"
+
+###############################################################################
+# START FIREWALL
+###############################################################################
+start_firewall() {
+    echo "Initializing firewall with separate inbound/outbound chains..."
+
+    ###########################################################################
+    # (1) Set default policies to DROP
+    ###########################################################################
+    $IPTABLES -P INPUT DROP
+    $IPTABLES -P FORWARD DROP
+    $IPTABLES -P OUTPUT DROP
+
+    # TODO: IPv6 support and blocking
+    # $IP6TABLES -P INPUT DROP
+    # $IP6TABLES -P FORWARD DROP
+    # $IP6TABLES -P OUTPUT DROP
+
+    ###########################################################################
+    # (2) Flush any existing rules/chains
+    ###########################################################################
+    $IPTABLES -F
+    $IPTABLES -X
+
+    ###########################################################################
+    # (3) Create custom chains
+    ###########################################################################
+    for CHAIN in \
+        $CHAIN_ALWAYS_ON_IN $CHAIN_ALWAYS_ON_OUT \
+        $CHAIN_MODE_SELECTOR_IN $CHAIN_MODE_SELECTOR_OUT \
+        $CHAIN_MAINTENANCE_IN $CHAIN_MAINTENANCE_OUT \
+        $CHAIN_PRODUCTION_IN $CHAIN_PRODUCTION_OUT
+    do
+        $IPTABLES -N $CHAIN
+    done
+
+    ###########################################################################
+    # (4) Allow Established/Related connections (Inbound & Outbound)
+    # OUTPUT (always): SSH (22), CL P2P (9000), CVM reverse-proxy (8745)
+    # OUTPUT (maintenance): SSH (10022)
+    ###########################################################################
+    $IPTABLES -A INPUT  -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    $IPTABLES -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+    ###########################################################################
+    # (5) Main Routing:
+    #     INPUT  -> ALWAYS_ON_IN -> MODE_SELECTOR_IN
+    #     OUTPUT -> ALWAYS_ON_OUT -> MODE_SELECTOR_OUT
+    ###########################################################################
+    $IPTABLES -A INPUT -j $CHAIN_ALWAYS_ON_IN
+    $IPTABLES -A INPUT -j $CHAIN_MODE_SELECTOR_IN
+
+    $IPTABLES -A OUTPUT -j $CHAIN_ALWAYS_ON_OUT
+    $IPTABLES -A OUTPUT -j $CHAIN_MODE_SELECTOR_OUT
+
+    ###########################################################################
+    # (6) ALWAYS_ON_IN: Inbound rules that never turn off
+    ###########################################################################
+    # SSH control port (22)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $SSH_CONTROL_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Searcher input channel (UDP on 27017)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p udp --dport $SEARCHER_INPUT_CHANNEL \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Consensus (CL) P2P inbound on port 9000 (TCP + UDP)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $CL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p udp --dport $CL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # CVM reverse-proxy inbound on port 8745 (TCP)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $CVM_REVERSE_PROXY_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from ALWAYS_ON_IN
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -j RETURN
+
+    ###########################################################################
+    # (7) ALWAYS_ON_OUT: Outbound rules that never turn off
+    ###########################################################################
+    # CL P2P outbound on port 9000 (TCP + UDP)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp --dport $CL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p udp --dport $CL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Flashbots & Titan builder bundle endpoints (always on)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_BUNDLE_ENDPOINT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_ENDPOINT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from ALWAYS_ON_OUT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -j RETURN
+
+    ###########################################################################
+    # (8) MAINTENANCE_IN: Inbound rules for Maintenance Mode
+    ###########################################################################
+    # SSH data plane on port 10022
+    $IPTABLES -A $CHAIN_MAINTENANCE_IN -p tcp --dport $SSH_DATA_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # EL P2P inbound on port 30303 (TCP + UDP)
+    $IPTABLES -A $CHAIN_MAINTENANCE_IN -p tcp --dport $EL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_MAINTENANCE_IN -p udp --dport $EL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from MAINTENANCE_IN
+    $IPTABLES -A $CHAIN_MAINTENANCE_IN -j RETURN
+
+    ###########################################################################
+    # (9) MAINTENANCE_OUT: Outbound rules for Maintenance Mode
+    ###########################################################################
+    # DNS (UDP/TCP 53)
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p udp --dport $DNS_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $DNS_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # HTTP / HTTPS
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $HTTP_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $HTTPS_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # EL P2P (30303) outbound only in Maintenance
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $EL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p udp --dport $EL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from MAINTENANCE_OUT
+    $IPTABLES -A $CHAIN_MAINTENANCE_OUT -j RETURN
+
+    ###########################################################################
+    # (10) PRODUCTION_IN: Inbound rules for Production Mode
+    ###########################################################################
+    $IPTABLES -A $CHAIN_PRODUCTION_IN -j RETURN
+
+    ###########################################################################
+    # (11) PRODUCTION_OUT: Outbound rules for Production Mode
+    # IP whitelisted for builder IPs
+    ###########################################################################
+    # Flashbots state diff
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_STATE_DIFF \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Titan state diff
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_STATE_DIFF \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # Return from PRODUCTION_OUT
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -j RETURN
+
+    ###########################################################################
+    # (12) Start in Maintenance Mode
+    ###########################################################################
+    $IPTABLES -A $CHAIN_MODE_SELECTOR_IN  -j $CHAIN_MAINTENANCE_IN
+    $IPTABLES -A $CHAIN_MODE_SELECTOR_OUT -j $CHAIN_MAINTENANCE_OUT
+
+    ###########################################################################
+    # (13) Allow loopback traffic
+    ###########################################################################
+    $IPTABLES -A INPUT  -i lo -j ACCEPT
+    $IPTABLES -A OUTPUT -o lo -j ACCEPT
+
+    echo "Firewall initialized in Maintenance Mode."
+}
+
+###############################################################################
+# STOP FIREWALL
+###############################################################################
+stop_firewall() {
+    echo "Flushing all firewall rules..."
+    $IPTABLES -F
+    $IPTABLES -X
+    $IPTABLES -P INPUT DROP
+    $IPTABLES -P FORWARD DROP
+    $IPTABLES -P OUTPUT DROP
+    echo "Firewall stopped (default DROP)."
+}
+
+###############################################################################
+# MAIN HANDLER
+###############################################################################
+case "$1" in
+    start)
+        start_firewall
+        ;;
+    stop)
+        stop_firewall
+        ;;
+    status)
+        echo "=== iptables -L -n -v ==="
+        $IPTABLES -L -n -v
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status}"
+        exit 1
+        ;;
+esac
+
+exit 0

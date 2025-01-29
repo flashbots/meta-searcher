@@ -1,0 +1,59 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          fluentbit-container
+# Required-Start:    $remote_fs
+# Required-Stop:     $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Fluentbit Container
+# Description:       Starts the fluentbit container using podman
+### END INIT INFO
+
+DAEMON=/usr/bin/podman
+USER=fluentbit
+NAME=fluentbit-container
+CONFIG_PATH=/etc/fluentbit/config/fluentbit.conf
+
+# Exit if podman is not installed
+[ -x "$DAEMON" ] || exit 0
+
+case "$1" in
+    start)
+        echo "Starting $NAME..."
+        su -s /bin/sh $USER -c "cd ~ && $DAEMON run -d \
+            --name $NAME \
+            --restart=always \
+            -v $CONFIG_PATH:/fluent-bit/etc/fluent-bit.conf:ro \
+            -v /delayed_logs:/var/log/fluentbit:rw \
+            -v /searcher_logs:/var/log/searcher:ro \
+            -v /etc/fluentbit/config/delay.lua:/fluent-bit/etc/delay.lua:ro \
+            docker.io/fluent/fluent-bit:3.2.4@sha256:d2e5b2fe876ca343ff68e431a62249caba2f5300bd340145b1f30bdacedf3a6a \
+            /fluent-bit/bin/fluent-bit --config /fluent-bit/etc/fluent-bit.conf"
+        ;;
+    stop)
+        echo "Stopping $NAME..."
+        su -s /bin/sh $USER -c "cd ~ && $DAEMON stop $NAME"
+        su -s /bin/sh $USER -c "cd ~ && $DAEMON rm -f $NAME"
+        ;;
+    restart)
+        $0 stop
+        sleep 2
+        $0 start
+        ;;
+    status)
+        if su -s /bin/sh $USER -c "cd ~ && $DAEMON container exists $NAME"; then
+            echo "$NAME is running"
+            su -s /bin/sh $USER -c "cd ~ && $DAEMON ps"
+            exit 0
+        else
+            echo "$NAME is not running"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit 0
