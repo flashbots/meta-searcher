@@ -2,7 +2,7 @@
 -- Lua script stays in memory for the lifetime of the Fluent Bit process,
 -- so all local variables persist across filter calls.
 
-local DELAY_SEC = 120 -- Delay (in seconds) before flushing logs
+local DELAY_SEC = 30 -- Delay (in seconds) before flushing logs
 local buckets = {} -- Table to bucket logs by their timestamp (seconds)
 local earliest_sec = nil -- Tracks the earliest second we have in our buckets table
 local last_processed_second = nil -- Tracks which second we last ran the flush logic on
