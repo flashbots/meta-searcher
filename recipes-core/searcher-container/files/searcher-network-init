@@ -73,11 +73,6 @@ start_firewall() {
     $IPTABLES -P FORWARD DROP
     $IPTABLES -P OUTPUT DROP
 
-    # TODO: IPv6 support and blocking
-    # $IP6TABLES -P INPUT DROP
-    # $IP6TABLES -P FORWARD DROP
-    # $IP6TABLES -P OUTPUT DROP
-
     ###########################################################################
     # (2) Flush any existing rules/chains
     ###########################################################################
