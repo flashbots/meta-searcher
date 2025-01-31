@@ -38,12 +38,12 @@ HTTPS_PORT=443             # Outbound: HTTPS (maintenance mode only)
 
 SEARCHER_INPUT_CHANNEL=27017  # Inbound: Input Only Channel (always on)
 
-FLASHBOTS_STATE_DIFF=8547        # Outbound: Flashbots builder state diff (production only)
-FLASHBOTS_BUNDLE_ENDPOINT=8645   # Outbound: Flashbots builder bundle submission (production only)
-TITAN_STATE_DIFF=42202           # Outbound: Titan builder state diff (production only)
-TITAN_BUNDLE_ENDPOINT=1337       # Outbound: Titan builder bundle submission (production only)
+FLASHBOTS_STATE_DIFF_PORT=8547 # Outbound: Flashbots builder state diff (production only)
+FLASHBOTS_BUNDLE_PORT=8645     # Outbound: Flashbots builder bundle submission (production only)
+TITAN_STATE_DIFF_PORT=42202    # Outbound: Titan builder state diff (production only)
+TITAN_BUNDLE_PORT=1337         # Outbound: Titan builder bundle submission (production only)
 
-CVM_REVERSE_PROXY_PORT=8745      # Inbound: CVM reverse proxy (always on)
+CVM_REVERSE_PROXY_PORT=8745    # Inbound: CVM reverse proxy (always on)
 
 ###############################################################################
 # Custom Chains
@@ -128,25 +128,30 @@ start_firewall() {
         -m conntrack --ctstate NEW -j ACCEPT
 
     # CVM reverse-proxy inbound on port 8745 (TCP)
+	# Please note what's behind the proxy
     $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $CVM_REVERSE_PROXY_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # Return from ALWAYS_ON_IN
+	# Return from ALWAYS_ON_IN to "MODE_SELECTOR_IN" (maintenance or production) and localhost
     $IPTABLES -A $CHAIN_ALWAYS_ON_IN -j RETURN
 
     ###########################################################################
     # (7) ALWAYS_ON_OUT: Outbound rules that never turn off
     ###########################################################################
     # CL P2P outbound on port 9000 (TCP + UDP)
+	# Note that it's not the searcher's CL, but rather the baked in one
+	# Make sure that the baked in CL cannot be made to do anything over p2p based on searcher's RPC calls
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp --dport $CL_P2P_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p udp --dport $CL_P2P_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Flashbots & Titan builder bundle endpoints (always on)
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_BUNDLE_ENDPOINT \
+	# Note that this traffic can be observed by the tdx host, and therefore the host can be leaked arbitrary data
+	# The host must be trusted at least not to collude with the searcher against the builder
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_BUNDLE_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_ENDPOINT \
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Return from ALWAYS_ON_OUT
@@ -172,6 +177,7 @@ start_firewall() {
     # (9) MAINTENANCE_OUT: Outbound rules for Maintenance Mode
     ###########################################################################
     # DNS (UDP/TCP 53)
+	# Note that this might cause issues if searchers rely on dns, maybe let them turn it off themselves in maintenance mode
     $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p udp --dport $DNS_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $DNS_PORT \
@@ -183,7 +189,7 @@ start_firewall() {
     $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $HTTPS_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # EL P2P (30303) outbound only in Maintenance
+	# EL P2P (30303) outbound only in Maintenance
     $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $EL_P2P_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p udp --dport $EL_P2P_PORT \
@@ -202,11 +208,11 @@ start_firewall() {
     # IP whitelisted for builder IPs
     ###########################################################################
     # Flashbots state diff
-    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_STATE_DIFF \
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_STATE_DIFF_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Titan state diff
-    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_STATE_DIFF \
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_STATE_DIFF_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Return from PRODUCTION_OUT

@@ -72,6 +72,7 @@ set_state() {
 }
 
 write_timestamp() {
+	# Comment that it should only ever be done from disconnect_from_production
     date +%s > "$TIMESTAMP_FILE"
 }
 
@@ -82,6 +83,7 @@ check_delay() {
     fi
     
     last_stop=$(cat "$TIMESTAMP_FILE")
+	# Note that time can be manipulated by the host (I think)
     current_time=$(date +%s)
     delay_seconds=120  # 2 minutes
     
@@ -125,10 +127,12 @@ kill_established_connections() {
 # Toggle the iptables chain jumps
 ###############################################################################
 configure_mode_rules() {
+	# I wonder if $1 and $2 shouldnt be swapped
     local new_mode="$1"
     local old_mode="$2"
     
     # 1) Kill all established flows from old mode
+	# Hm, what if something is established between here and (2)? Should we (2) first? (1-2-1)?
     kill_established_connections "$old_mode"
 
     # 2) Flush the mode selector so we remove references to the old sub-chain
@@ -160,6 +164,7 @@ configure_mode_rules() {
 # Container Namespace Rule Verification
 ###############################################################################
 check_searcher_namespace_rules() {
+	# Note: it would be nice to comment on why this is needed
     local cont_name="searcher-container"
     local user="searcher"
     local daemon="/usr/bin/podman"
@@ -240,6 +245,7 @@ connect_to_maintenance() {
         echo "Error: Can only connect to maintenance from stopped state"
         return 1
     fi
+	# bash scary
     if ! check_delay; then
         return 1
     fi
