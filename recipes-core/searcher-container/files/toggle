@@ -1,4 +1,10 @@
 #!/bin/sh
+set -eu -o pipefail
+
+# -e: script exits on any command error.
+# -u: exits if any undefined variable is used.
+# -o pipefail: catches errors in any part of a pipeline.
+
 #
 # Mode Switching Script
 #
