@@ -13,7 +13,7 @@ case "$1" in
     echo "Implementing su and root access restrictions"
     
     # Ensure the persistent directory is owned by the searcher user
-    chown -R searcher:searcher /persistent 
+    chown -R searcher:searcher /persistent/searcher
     
     # Remove execute permissions from su for non-root users
     chmod 700 /bin/su
