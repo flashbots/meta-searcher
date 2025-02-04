@@ -21,9 +21,8 @@ INHIBIT_PACKAGE_DEBUG_SPLIT = '1'
 INHIBIT_PACKAGE_STRIP = '1'
 GO_EXTRA_LDFLAGS:append = " -s -w -buildid= -X github.com/flashbots/ssh-pubkey-server/common.Version=${PV}"
 
-
-DEPENDS += "cvm-reverse-proxy"
-RDEPENDS:${PN} = "cvm-reverse-proxy"
+DEPENDS += "cvm-reverse-proxy-server"
+RDEPENDS:${PN} = "cvm-reverse-proxy-server"
 
 do_compile[network] = "1"
 
