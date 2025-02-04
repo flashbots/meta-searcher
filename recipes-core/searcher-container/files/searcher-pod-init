@@ -17,10 +17,16 @@ NAME=searcher-container
 SEARCHER_SSH_PORT=10022
 ENGINE_API_PORT=8551
 EL_P2P_PORT=30303
+SEARCHER_INPUT_CHANNEL=27017
 
 start_searcher_container() {
+    # Create directory for openssh server public key
     mkdir -p /etc/searcher/ssh_hostkey
     chown searcher:searcher /etc/searcher/ssh_hostkey
+    
+    # Ensure /persistent/searcher is owned by the searcher user
+    mkdir -p /persistent/searcher
+    chown -R searcher:searcher /persistent/searcher
 
     echo "Starting $NAME..."
     su -s /bin/sh $USER -c "cd ~ && $DAEMON run -d \
@@ -28,11 +34,12 @@ start_searcher_container() {
         -p ${SEARCHER_SSH_PORT}:22 \
         -p ${ENGINE_API_PORT}:${ENGINE_API_PORT} \
         -p ${EL_P2P_PORT}:${EL_P2P_PORT} \
+        -p ${SEARCHER_INPUT_CHANNEL}:${SEARCHER_INPUT_CHANNEL} \
         -v /etc/searcher_key:/container_auth_keys:ro \
-        -v /persistent:/persistent \
+        -v /persistent/searcher:/persistent:rw \
         -v /etc/searcher/ssh_hostkey:/etc/searcher/ssh_hostkey:rw \
-        -v /searcher_logs:/var/log/searcher \
-        -v /var/volatile/jwt.hex:/secrets/jwt.hex:rw \
+        -v /searcher_logs:/var/log/searcher:rw \
+        -v /var/volatile/jwt.hex:/secrets/jwt.hex:ro \
         docker.io/library/ubuntu:24.04 \
         /bin/sh -c ' \
             DEBIAN_FRONTEND=noninteractive apt-get update && \
