@@ -17,13 +17,9 @@ DAEMON_ARGS="--listen-addr=127.0.0.1:8645 --ssh-pubkey-file ${KEY_FILE}"
 PIDFILE=/var/run/$NAME.pid
 LOGFILE=/tmp/httpserver.log
 
-PROXY_BIN=/usr/bin/proxy-server
-PROXY_NAME=cvm-reverse-proxy-server
-PROXY_ARGS="--listen-addr=0.0.0.0:8745 \
-            --target-addr=http://localhost:8645 \
-            --server-attestation-type=azure-tdx"
-PROXY_PIDFILE=/var/run/${PROXY_NAME}.pid
-PROXY_LOGFILE=/tmp/${PROXY_NAME}.log
+DAEMON_PROXY=/usr/bin/cvm-reverse-proxy
+LOGFILE_PROXY=/tmp/proxy.log
+PIDFILE_PROXY=/var/run/proxy.pid
 
 wait_for_ssh_key() {
     echo "Waiting for SSH host key generation..."
@@ -55,13 +51,11 @@ wait_for_ssh_key() {
 }
 
 start_proxy() {
-    echo -n "Starting CVM Reverse Proxy: "
-    start-stop-daemon -S \
-    --make-pidfile \
-    --pidfile "$PROXY_PIDFILE" \
-    -m -b \
-    --exec /bin/sh -- -c "exec $PROXY_BIN $PROXY_ARGS >> $PROXY_LOGFILE 2>&1"
-    echo "Started CVM Reverse Proxy."
+    echo -n "Starting attested TLS Proxy: "
+    start-stop-daemon -S -p $PIDFILE_PROXY -N -10 -b -a /bin/sh -- -c "exec 
+        ${DAEMON_PROXY} -server -target-port=8645 -listen-port=8745 \
+        2>&1 | tee ${LOGFILE_PROXY}"
+    echo "proxy."
 }
 
 start() {
@@ -71,29 +65,18 @@ start() {
       return 1
   fi
   
-  # Start the CVM reverse proxy server
+  # Start the attested TLS reverse proxy server
   start_proxy
   
-  # Start the SSH public key server
   echo "Starting $DESC: "
-  start-stop-daemon -S \
-        --make-pidfile \
-        --pidfile "$PIDFILE" \
-        -m -b \
-        --exec /bin/sh -- -c "exec $DAEMON $DAEMON_ARGS 2>&1 | tee -a $LOGFILE"
-    echo "$NAME started."
+  start-stop-daemon -S -p $PIDFILE -N -10 -b -a /bin/sh -- -c "exec $DAEMON $DAEMON_ARGS 2>&1 | tee -a $LOGFILE"
+  echo "$NAME."
 }
 
 stop() {
-  echo "Stopping $DESC..."
-    start-stop-daemon --stop --quiet --pidfile "$PIDFILE" || true
-    rm -f "$PIDFILE"
-
-    echo "Stopping CVM Reverse Proxy Server..."
-    start-stop-daemon --stop --quiet --pidfile "$PROXY_PIDFILE" || true
-    rm -f "$PROXY_PIDFILE"
-
-    echo "$NAME and reverse proxy stopped."
+  echo "Stopping $DESC: "
+  start-stop-daemon --stop --quiet --pidfile $PIDFILE
+  echo "$NAME."
 }
 
 restart() {
@@ -102,7 +85,6 @@ restart() {
   sleep 1
   start
 }
-
 test -x $DAEMON || exit 0
 
 set -e
