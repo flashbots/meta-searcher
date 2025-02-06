@@ -12,15 +12,16 @@
 DAEMON=/usr/bin/httpserver
 NAME=ssh-pubkey-server
 DESC="SSH Public Key Server"
+SSH_PUBKEY_SERVER_PORT=5001
 KEY_FILE="/etc/searcher/ssh_hostkey/host_key.pub"
-DAEMON_ARGS="--listen-addr=127.0.0.1:8645 --ssh-pubkey-file ${KEY_FILE}"
+DAEMON_ARGS="--listen-addr=127.0.0.1:${SSH_PUBKEY_SERVER_PORT} --ssh-pubkey-file ${KEY_FILE}"
 PIDFILE=/var/run/$NAME.pid
 LOGFILE=/tmp/httpserver.log
 
 PROXY_BIN=/usr/bin/proxy-server
 PROXY_NAME=cvm-reverse-proxy-server
 PROXY_ARGS="--listen-addr=0.0.0.0:8745 \
-            --target-addr=http://localhost:8645 \
+            --target-addr=http://localhost:${SSH_PUBKEY_SERVER_PORT} \
             --server-attestation-type=azure-tdx"
 PROXY_PIDFILE=/var/run/${PROXY_NAME}.pid
 PROXY_LOGFILE=/tmp/${PROXY_NAME}.log
