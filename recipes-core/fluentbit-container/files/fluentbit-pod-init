@@ -19,6 +19,11 @@ CONFIG_PATH=/etc/fluentbit/config/fluentbit.conf
 
 case "$1" in
     start)
+
+        # Note: fluentbit automatically creates /var/log/fluentbit/output.log (/delayed_logs/output.log on the host)
+        # Permissions: -rw-r--r--    1 fluentbi adm            175 Feb  6 21:01 output.log
+        # R/W by fluentbit user, read only by searcher user
+
         echo "Starting $NAME..."
         su -s /bin/sh $USER -c "cd ~ && $DAEMON run -d \
             --name $NAME \
