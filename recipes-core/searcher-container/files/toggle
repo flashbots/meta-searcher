@@ -77,6 +77,7 @@ set_state() {
     echo "$1" > "$STATE_FILE"
 }
 
+# SECURITY: this should only be called from disconnect_from_production()
 write_timestamp() {
     date +%s > "$TIMESTAMP_FILE"
 }
@@ -88,6 +89,7 @@ check_delay() {
     fi
     
     last_stop=$(cat "$TIMESTAMP_FILE")
+    # SECURITY: time can be manipulated by the host
     current_time=$(date +%s)
     delay_seconds=120  # 2 minutes
     
@@ -164,6 +166,7 @@ configure_mode_rules() {
 
 ###############################################################################
 # Container Namespace Rule Verification
+# Check that the searcher-container-netns iptables rules blocking port 9000 are active
 ###############################################################################
 check_searcher_namespace_rules() {
     local cont_name="searcher-container"
