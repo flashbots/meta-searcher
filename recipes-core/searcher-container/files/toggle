@@ -135,13 +135,13 @@ kill_established_connections() {
 configure_mode_rules() {
     local new_mode="$1"
     local old_mode="$2"
-    
-    # 1) Kill all established flows from old mode
-    kill_established_connections "$old_mode"
 
-    # 2) Flush the mode selector so we remove references to the old sub-chain
+    # 1) Flush the mode selector so we remove references to the old sub-chain
     $IPTABLES -F $CHAIN_MODE_SELECTOR_IN
     $IPTABLES -F $CHAIN_MODE_SELECTOR_OUT
+
+    # 2) Kill all established flows from old mode
+    kill_established_connections "$old_mode"
 
     # 3) Depending on new_mode, jump to the matching sub-chains
     case "$new_mode" in
