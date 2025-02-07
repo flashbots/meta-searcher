@@ -24,7 +24,6 @@ INITSCRIPT_PACKAGES = "${PN}"
 INITSCRIPT_NAME:${PN} = "fluentbit-pod"
 INITSCRIPT_PARAMS:${PN} = "defaults 99"
 
-# Does it really depend on podman?
 RDEPENDS:${PN} = "podman modutils-initscripts"
 
 do_install() {
