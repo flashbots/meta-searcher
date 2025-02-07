@@ -20,6 +20,13 @@ CONFIG_PATH=/etc/fluentbit/config/fluentbit.conf
 case "$1" in
     start)
 
+        # Create directory for delayed logs
+        mkdir -p /persistent/delayed_logs
+
+        # 2) Change its owner to fluentbit and set permissions
+        chown fluentbit:fluentbit /persistent/delayed_logs
+        chmod 755 /persistent/delayed_logs
+
         # Note: fluentbit automatically creates /var/log/fluentbit/output.log (/delayed_logs/output.log on the host)
         # Permissions: -rw-r--r--    1 fluentbi adm            175 Feb  6 21:01 output.log
         # R/W by fluentbit user, read only by searcher user
@@ -29,8 +36,8 @@ case "$1" in
             --name $NAME \
             --restart=always \
             -v $CONFIG_PATH:/fluent-bit/etc/fluent-bit.conf:ro \
-            -v /delayed_logs:/var/log/fluentbit:rw \
-            -v /searcher_logs:/var/log/searcher:ro \
+            -v /persistent/delayed_logs:/var/log/fluentbit:rw \
+            -v /persistent/searcher_logs:/var/log/searcher:ro \
             -v /etc/fluentbit/config/delay.lua:/fluent-bit/etc/delay.lua:ro \
             docker.io/fluent/fluent-bit:3.2.4@sha256:d2e5b2fe876ca343ff68e431a62249caba2f5300bd340145b1f30bdacedf3a6a \
             /fluent-bit/bin/fluent-bit --config /fluent-bit/etc/fluent-bit.conf"
