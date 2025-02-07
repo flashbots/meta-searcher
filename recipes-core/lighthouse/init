@@ -50,8 +50,8 @@ start() {
     # Ensure the lighthouse log exists and has correct permissions
     touch $LOGFILE
 
-    # Ensure the LIGHTHOUSE_DIR exists and has correct permissions
-    mkdir -p $LIGHTHOUSE_DIR && chmod 0770 $LIGHTHOUSE_DIR
+    # Ensure the LIGHTHOUSE_DIR exists and only root can access it
+    mkdir -p $LIGHTHOUSE_DIR && chmod -R 700 $LIGHTHOUSE_DIR
 
     # Remount /var/volatile with increased size
     mount -o remount,size=90% /var/volatile
