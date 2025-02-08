@@ -29,6 +29,7 @@ start_searcher_container() {
     chown -R searcher:searcher /persistent/searcher
 
     # Create directory for searcher logs and set permissions
+    # Fluentbit will need to traverse this directory to ingest the logs
     mkdir -p /persistent/searcher_logs
     chown searcher:searcher /persistent/searcher_logs
     chmod 755 /persistent/searcher_logs

@@ -27,10 +27,6 @@ case "$1" in
         chown fluentbit:fluentbit /persistent/delayed_logs
         chmod 755 /persistent/delayed_logs
 
-        # Note: fluentbit automatically creates /var/log/fluentbit/output.log (/delayed_logs/output.log on the host)
-        # Permissions: -rw-r--r--    1 fluentbi adm            175 Feb  6 21:01 output.log
-        # R/W by fluentbit user, read only by searcher user
-
         echo "Starting $NAME..."
         su -s /bin/sh $USER -c "cd ~ && $DAEMON run -d \
             --name $NAME \

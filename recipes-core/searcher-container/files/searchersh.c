@@ -126,9 +126,9 @@ int main(int argc, char *argv[]) {
         }
 
         // Call tail with the specified number of lines, e.g.:
-        // tail -n <arg> /delayed_logs/output.log
-        // If arg = "3", that's tail -n 3 /delayed_logs/output.log
-        execl("/usr/bin/tail", "tail", "-n", arg, "/delayed_logs/output.log", (char *)NULL);
+        // tail -n <arg> /persistent/delayed_logs/output.log
+        // If arg = "3", that's tail -n 3 /persistent/delayed_logs/output.log
+        execl("/usr/bin/tail", "tail", "-n", arg, "/persistent/delayed_logs/output.log", (char *)NULL);
         
         perror("execl failed (logs)");
         free(arg_copy);
