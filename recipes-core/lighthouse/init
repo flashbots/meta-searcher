@@ -32,7 +32,7 @@ monitor_and_restart() {
 }
 
 start_lighthouse() {
-		start-stop-daemon -S --make-pidfile -p $PIDFILE -N -10 -b -a /bin/sh -- -c "exec ${DAEMON} \
+		start-stop-daemon -S --make-pidfile -p $PIDFILE -b -a /bin/sh -- -c "exec ${DAEMON} \
 		bn \
 		--network mainnet \
 		--execution-endpoint http://localhost:8551 \
