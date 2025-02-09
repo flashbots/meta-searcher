@@ -4,7 +4,7 @@
 #include <unistd.h>     // For execl
 #include <ctype.h>      // For isdigit
 
-#define MAX_LINES 10000
+#define MAX_LINES 10000000
 
 // argc is the number of command-line arguments
 // argv is an array of C-strings (character pointers)
