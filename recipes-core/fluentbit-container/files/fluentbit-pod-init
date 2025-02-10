@@ -27,7 +27,7 @@ case "$1" in
             -v /delayed_logs:/var/log/fluentbit:rw \
             -v /searcher_logs:/var/log/searcher:ro \
             -v /etc/fluentbit/config/delay.lua:/fluent-bit/etc/delay.lua:ro \
-            docker.io/fluent/fluent-bit:3.2.4@sha256:d2e5b2fe876ca343ff68e431a62249caba2f5300bd340145b1f30bdacedf3a6a \
+            docker.io/fluent/fluent-bit:3.2.4-debug \
             /fluent-bit/bin/fluent-bit --config /fluent-bit/etc/fluent-bit.conf"
         ;;
     stop)
