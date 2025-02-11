@@ -21,6 +21,7 @@ CONTAINER_NAME="searcher-container"
 ###############################################################################
 FLASHBOTS_BUILDER_IP="131.153.11.211"
 TITAN_BUILDER_IP="52.207.17.217"
+RBUILDER_02_IP="3.16.169.173"
 
 ###############################################################################
 # Ports
@@ -179,6 +180,8 @@ start_firewall() {
         -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $RBUILDER_02_IP --dport $FLASHBOTS_BUNDLE_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
 
     # Return from ALWAYS_ON_OUT back to caller (OUTPUT chain -> MODE_SELECTOR_OUT) 
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -j RETURN
@@ -236,6 +239,10 @@ start_firewall() {
     ###########################################################################
     # Flashbots state diff
     $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_STATE_DIFF_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # RBUILDER_02 state diff (same ports as Flashbots)
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $RBUILDER_02_IP --dport $FLASHBOTS_STATE_DIFF_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Titan state diff

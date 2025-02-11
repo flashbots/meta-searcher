@@ -108,6 +108,7 @@ kill_established_connections() {
     local old_mode="$1"
     if [ "$old_mode" = "production" ]; then
         echo "Killing leftover production flows (ports $FB_STATE_DIFF_PORT, $TITAN_STATE_DIFF_PORT)..."
+        # Both Flashbots and RBUILDER_02 use FB_STATE_DIFF_PORT
         $CONNTRACK -D -p tcp --dport $FB_STATE_DIFF_PORT 2>/dev/null
         $CONNTRACK -D -p tcp --dport $TITAN_STATE_DIFF_PORT 2>/dev/null
 
