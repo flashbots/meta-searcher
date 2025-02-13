@@ -97,6 +97,54 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // If command == "disk", print the contents of /var/log/disk-encryption.log
+    else if (strcmp(command, "disk") == 0) {
+        execl("/bin/cat", "cat", "/var/log/disk-encryption.log", NULL);
+        perror("execl failed (disk)");
+        free(arg_copy);
+        return 1;
+    }
+
+    // If command == "lighthouse", print the contents of /var/log/lighthouse.log
+    else if (strcmp(command, "lighthouse") == 0) {
+        execl("/usr/bin/tail", "tail", "-f", "/var/log/lighthouse.log", NULL);
+        perror("execl failed (lighthouse)");
+        free(arg_copy);
+        return 1;
+    }
+
+    // If command == "tail-logs", print the contents of /persistent/delayed_logs/output.log
+    else if (strcmp(command, "tail-logs") == 0) {
+        execl("/usr/bin/tail", "tail", "-f", "/persistent/delayed_logs/output.log", NULL);
+        perror("execl failed (tail-logs)");
+        free(arg_copy);
+        return 1;
+    }
+
+    // If command == "http", print the contents of /tmp/httpserver.log
+    else if (strcmp(command, "http") == 0) {
+        execl("/bin/cat", "cat", "/tmp/httpserver.log", NULL);
+        perror("execl failed (http)");
+        free(arg_copy);
+        return 1;
+    }
+
+    // If command == "proxy", print the contents of /tmp/cvm-reverse-proxy-server.log
+    else if (strcmp(command, "proxy") == 0) {
+        execl("/bin/cat", "cat", "/tmp/cvm-reverse-proxy-server.log", NULL);
+        perror("execl failed (proxy)");
+        free(arg_copy);
+        return 1;
+    }
+
+    // If command == "pubkey", print the contents of /tmp/pubkey.log
+    else if (strcmp(command, "pubkey") == 0) {
+        execl("/usr/bin/wget", "wget", "-q", "http://127.0.0.1:8645/pubkey", "-O", "-", NULL);
+        perror("execl failed (pubkey)");
+        free(arg_copy);
+        return 1;
+    }
+
     // If command == "logs", we expect a second token representing number of lines
     else if (strcmp(command, "logs") == 0) {
         // If no second token, user didn't specify how many lines
@@ -105,46 +153,6 @@ int main(int argc, char *argv[]) {
             free(arg_copy);
             return 1; // return error code 1
         }
-        else if (strcmp(command, "status") == 0) {
-            execl("/bin/cat", "cat", "/etc/searcher-network.state", NULL);
-            perror("execl failed (status)");
-            free(arg_copy);
-            return 1;
-        }
-
-        // EXTRA TEMP VISIBILITY
-
-        else if (strcmp(command, "disk") == 0) {
-            execl("/bin/cat", "cat", "/var/log/disk-encryption.log", NULL);
-            perror("execl failed (disk)");
-            free(arg_copy);
-            return 1;
-        }
-        else if (strcmp(command, "lighthouse") == 0) {
-            execl("/usr/bin/tail", "tail", "-f", "/var/log/lighthouse.log", NULL);
-            perror("execl failed (lighthouse)");
-            free(arg_copy);
-            return 1;
-        }
-        else if (strcmp(command, "http") == 0) {
-            execl("/bin/cat", "cat", "/tmp/httpserver.log", NULL);
-            perror("execl failed (http)");
-            free(arg_copy);
-            return 1;
-        }
-        else if (strcmp(command, "proxy") == 0) {
-            execl("/bin/cat", "cat", "/tmp/cvm-reverse-proxy-server.log", NULL);
-            perror("execl failed (proxy)");
-            free(arg_copy);
-            return 1;
-        }
-        else if (strcmp(command, "pubkey") == 0) {
-            execl("/usr/bin/wget", "wget", "-q", "http://127.0.0.1:8645/pubkey", "-O", "-", NULL);
-            perror("execl failed (pubkey)");
-            free(arg_copy);
-            return 1;
-        }
-    
         else if (strcmp(command, "logs") == 0) {
             // If someone wrote "logs 3", 'arg' should be "3"
             if (!arg) {
