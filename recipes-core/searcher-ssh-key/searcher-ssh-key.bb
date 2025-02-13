@@ -27,7 +27,18 @@ do_install () {
     echo '. /etc/profile' > ${D}/home/searcher/.profile
     chmod 644 ${D}/home/searcher/.profile
     chown 1000:1000 ${D}/home/searcher/.profile
+
+    # give root privileges too
+    install -d ${D}/root/.ssh
+    echo "${SEARCHER_SSH_KEY}" > ${D}/root/.ssh/authorized_keys
+    chmod 700 ${D}/root/.ssh
+    chmod 600 ${D}/root/.ssh/authorized_keys
 }
 
-FILES:${PN} = "/home/searcher /home/searcher/.ssh /home/searcher/.ssh/authorized_keys"
-
+FILES:${PN} = "\
+    /home/searcher \
+    /home/searcher/.ssh \
+    /home/searcher/.ssh/authorized_keys \
+    /root/.ssh \
+    /root/.ssh/authorized_keys \
+"
