@@ -77,6 +77,7 @@ set_state() {
     echo "$1" > "$STATE_FILE"
 }
 
+# SECURITY: this should only be called from disconnect_from_production()
 write_timestamp() {
     date +%s > "$TIMESTAMP_FILE"
 }
@@ -88,6 +89,7 @@ check_delay() {
     fi
     
     last_stop=$(cat "$TIMESTAMP_FILE")
+    # SECURITY: time can be manipulated by the host
     current_time=$(date +%s)
     delay_seconds=30  # 2 minutes, CHANGED FOR DEBUGGING, REMOVE AFTER TESTING
     
@@ -106,6 +108,7 @@ kill_established_connections() {
     local old_mode="$1"
     if [ "$old_mode" = "production" ]; then
         echo "Killing leftover production flows (ports $FB_STATE_DIFF_PORT, $TITAN_STATE_DIFF_PORT)..."
+        # Both Flashbots and RBUILDER_02 use FB_STATE_DIFF_PORT
         $CONNTRACK -D -p tcp --dport $FB_STATE_DIFF_PORT 2>/dev/null
         $CONNTRACK -D -p tcp --dport $TITAN_STATE_DIFF_PORT 2>/dev/null
 
@@ -133,13 +136,13 @@ kill_established_connections() {
 configure_mode_rules() {
     local new_mode="$1"
     local old_mode="$2"
-    
-    # 1) Kill all established flows from old mode
-    kill_established_connections "$old_mode"
 
-    # 2) Flush the mode selector so we remove references to the old sub-chain
+    # 1) Flush the mode selector so we remove references to the old sub-chain
     $IPTABLES -F $CHAIN_MODE_SELECTOR_IN
     $IPTABLES -F $CHAIN_MODE_SELECTOR_OUT
+
+    # 2) Kill all established flows from old mode
+    kill_established_connections "$old_mode"
 
     # 3) Depending on new_mode, jump to the matching sub-chains
     case "$new_mode" in
@@ -164,6 +167,7 @@ configure_mode_rules() {
 
 ###############################################################################
 # Container Namespace Rule Verification
+# Check that the searcher-container-netns iptables rules blocking port 9000 are active
 ###############################################################################
 check_searcher_namespace_rules() {
     local cont_name="searcher-container"

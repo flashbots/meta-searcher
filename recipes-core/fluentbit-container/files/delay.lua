@@ -37,10 +37,9 @@ function log_delay(tag, ts_table, record)
     while earliest_sec and earliest_sec <= (now_sec - DELAY_SEC) do
         local bucket_logs = buckets[earliest_sec]
         if bucket_logs then
-            -- Move all logs in this bucket to 'to_emit'
-            for _, old_record in ipairs(bucket_logs) do
-                table.insert(to_emit, old_record)
-            end
+            -- Use table.move to quickly merge bucket_logs into to_emit
+            -- (start index = 1, end index = #bucket_logs, insert destination = #to_emit+1)
+            table.move(bucket_logs, 1, #bucket_logs, #to_emit + 1, to_emit)
             buckets[earliest_sec] = nil
         end
 
