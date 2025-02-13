@@ -12,7 +12,6 @@
 # Binaries
 ###############################################################################
 IPTABLES="/usr/sbin/iptables"
-IP6TABLES="/usr/sbin/ip6tables"
 CONNTRACK="/usr/sbin/conntrack"
 PODMAN="/usr/bin/podman"
 CONTAINER_NAME="searcher-container"
@@ -22,6 +21,7 @@ CONTAINER_NAME="searcher-container"
 ###############################################################################
 FLASHBOTS_BUILDER_IP="131.153.11.211"
 TITAN_BUILDER_IP="52.207.17.217"
+RBUILDER_02_IP="3.16.169.173"
 
 ###############################################################################
 # Ports
@@ -38,13 +38,38 @@ HTTPS_PORT=443             # Outbound: HTTPS (maintenance mode only)
 
 SEARCHER_INPUT_CHANNEL=27017  # Inbound: Input Only Channel (always on)
 
-FLASHBOTS_STATE_DIFF=8547        # Outbound: Flashbots builder state diff (production only)
-FLASHBOTS_BUNDLE_ENDPOINT=8645   # Outbound: Flashbots builder bundle submission (production only)
-TITAN_STATE_DIFF=42202           # Outbound: Titan builder state diff (production only)
-TITAN_BUNDLE_ENDPOINT=1337       # Outbound: Titan builder bundle submission (production only)
+FLASHBOTS_STATE_DIFF_PORT=8547 # Outbound: Flashbots builder state diff (production only)
+FLASHBOTS_BUNDLE_PORT=8645     # Outbound: Flashbots builder bundle submission (production only)
+TITAN_STATE_DIFF_PORT=42202    # Outbound: Titan builder state diff (production only)
+TITAN_BUNDLE_PORT=1337         # Outbound: Titan builder bundle submission (production only)
 
 CVM_REVERSE_PROXY_PORT=8745      # Inbound: CVM reverse proxy (always on)
 
+###############################################################################
+# Network Flow Diagram
+###############################################################################
+#
+# [Inbound Packet]
+#    │
+#    ▼
+#  (INPUT Chain)
+#    ├─(ESTABLISHED/RELATED?)─> ACCEPT
+#    ├─> ALWAYS_ON_IN ──> Return
+#    └─> MODE_SELECTOR_IN 
+#          ├─> jumps MAINTENANCE_IN or PRODUCTION_IN ─> Return
+#          └─> end => default DROP
+#
+#
+# [Outbound Packet]
+#    │
+#    ▼
+#  (OUTPUT Chain)
+#    ├─(ESTABLISHED/RELATED?)─> ACCEPT
+#    ├─> ALWAYS_ON_OUT ──> Return
+#    └─> MODE_SELECTOR_OUT
+#          ├─> jumps MAINTENANCE_OUT or PRODUCTION_OUT ─> Return
+#          └─> end => default DROP
+#
 ###############################################################################
 # Custom Chains
 ###############################################################################
@@ -128,28 +153,37 @@ start_firewall() {
         -m conntrack --ctstate NEW -j ACCEPT
 
     # CVM reverse-proxy inbound on port 8745 (TCP)
+    # Serves server attestation 
+    # Also forwards request to ssh pubkey server on localhost:5001, 
+    #    which serves searcher-container openssh server pubkey 
     $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $CVM_REVERSE_PROXY_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # Return from ALWAYS_ON_IN
+    # Return from ALWAYS_ON_IN back to caller (INPUT chain -> MODE_SELECTOR_IN) 
     $IPTABLES -A $CHAIN_ALWAYS_ON_IN -j RETURN
 
     ###########################################################################
     # (7) ALWAYS_ON_OUT: Outbound rules that never turn off
     ###########################################################################
     # CL P2P outbound on port 9000 (TCP + UDP)
+    # Note: This is the lighthouse CL client run on the host, not the searcher's CL
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp --dport $CL_P2P_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p udp --dport $CL_P2P_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Flashbots & Titan builder bundle endpoints (always on)
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_BUNDLE_ENDPOINT \
+    # Security note: This is a side channel.
+    # While the operator will not be able to see the content of the packets, 
+    # they can observe the presence or absence of packets. 
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_BUNDLE_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_ENDPOINT \
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $RBUILDER_02_IP --dport $FLASHBOTS_BUNDLE_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # Return from ALWAYS_ON_OUT
+    # Return from ALWAYS_ON_OUT back to caller (OUTPUT chain -> MODE_SELECTOR_OUT) 
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -j RETURN
 
     ###########################################################################
@@ -165,13 +199,14 @@ start_firewall() {
     $IPTABLES -A $CHAIN_MAINTENANCE_IN -p udp --dport $EL_P2P_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # Return from MAINTENANCE_IN
+    # Return from MAINTENANCE_IN back to caller (INPUT chain -> END) 
     $IPTABLES -A $CHAIN_MAINTENANCE_IN -j RETURN
 
     ###########################################################################
     # (9) MAINTENANCE_OUT: Outbound rules for Maintenance Mode
     ###########################################################################
     # DNS (UDP/TCP 53)
+    # Note: Searchers will only have DNS in maintenance mode! 
     $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p udp --dport $DNS_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p tcp --dport $DNS_PORT \
@@ -189,12 +224,13 @@ start_firewall() {
     $IPTABLES -A $CHAIN_MAINTENANCE_OUT -p udp --dport $EL_P2P_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # Return from MAINTENANCE_OUT
+    # Return from MAINTENANCE_OUT back to caller (OUTPUT chain -> END) 
     $IPTABLES -A $CHAIN_MAINTENANCE_OUT -j RETURN
 
     ###########################################################################
     # (10) PRODUCTION_IN: Inbound rules for Production Mode
     ###########################################################################
+    # Return from PRODUCTION_IN back to caller (INPUT chain -> END) 
     $IPTABLES -A $CHAIN_PRODUCTION_IN -j RETURN
 
     ###########################################################################
@@ -202,14 +238,18 @@ start_firewall() {
     # IP whitelisted for builder IPs
     ###########################################################################
     # Flashbots state diff
-    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_STATE_DIFF \
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_STATE_DIFF_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # RBUILDER_02 state diff (same ports as Flashbots)
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $RBUILDER_02_IP --dport $FLASHBOTS_STATE_DIFF_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Titan state diff
-    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_STATE_DIFF \
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_STATE_DIFF_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # Return from PRODUCTION_OUT
+    # Return from PRODUCTION_OUT back to caller (OUTPUT chain -> END) 
     $IPTABLES -A $CHAIN_PRODUCTION_OUT -j RETURN
 
     ###########################################################################

@@ -28,6 +28,12 @@ start_searcher_container() {
     mkdir -p /persistent/searcher
     chown -R searcher:searcher /persistent/searcher
 
+    # Create directory for searcher logs and set permissions
+    # Fluentbit will need to traverse this directory to ingest the logs
+    mkdir -p /persistent/searcher_logs
+    chown searcher:searcher /persistent/searcher_logs
+    chmod 755 /persistent/searcher_logs
+
     echo "Starting $NAME..."
     su -s /bin/sh $USER -c "cd ~ && $DAEMON run -d \
         --name $NAME \
@@ -38,7 +44,7 @@ start_searcher_container() {
         -v /etc/searcher_key:/container_auth_keys:ro \
         -v /persistent/searcher:/persistent:rw \
         -v /etc/searcher/ssh_hostkey:/etc/searcher/ssh_hostkey:rw \
-        -v /searcher_logs:/var/log/searcher:rw \
+        -v /persistent/searcher_logs:/var/log/searcher:rw \
         -v /var/volatile/jwt.hex:/secrets/jwt.hex:ro \
         docker.io/library/ubuntu:24.04 \
         /bin/sh -c ' \
