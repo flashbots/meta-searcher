@@ -97,6 +97,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // If command == "tail-the-logs", print the contents of /persistent/delayed_logs/output.log
+    else if (strcmp(command, "tail-the-logs") == 0) {
+        execl("/usr/bin/tail", "tail", "-f", "/persistent/delayed_logs/output.log", NULL);
+        perror("execl failed (tail-the-logs)");
+        free(arg_copy);
+        return 1;
+    }
+
     // If command == "logs", we expect a second token representing number of lines
     else if (strcmp(command, "logs") == 0) {
         // If no second token, user didn't specify how many lines
