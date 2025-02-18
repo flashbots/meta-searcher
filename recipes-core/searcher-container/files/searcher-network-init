@@ -44,6 +44,7 @@ TITAN_STATE_DIFF_PORT=42202    # Outbound: Titan builder state diff (production 
 TITAN_BUNDLE_PORT=1337         # Outbound: Titan builder bundle submission (production only)
 
 CVM_REVERSE_PROXY_PORT=8745      # Inbound: CVM reverse proxy (always on)
+NTP_PORT=123           # Outbound: NTP (always on)
 
 ###############################################################################
 # Network Flow Diagram
@@ -170,6 +171,10 @@ start_firewall() {
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp --dport $CL_P2P_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p udp --dport $CL_P2P_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+
+    # NTP outbound on port 123 (UDP)
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p udp --dport $NTP_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Flashbots & Titan builder bundle endpoints (always on)
