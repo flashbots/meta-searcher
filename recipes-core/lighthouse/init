@@ -40,8 +40,6 @@ start_lighthouse() {
         --checkpoint-sync-url https://mainnet.checkpoint.sigp.io \
 		--disable-deposit-contract-sync \
 		--datadir "$LIGHTHOUSE_DIR" \
-        --disable-optimistic-finalized-sync \
-        --disable-quic \
 		2>&1 | tee ${LOGFILE}"
 }
 
