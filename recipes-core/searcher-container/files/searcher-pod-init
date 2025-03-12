@@ -40,6 +40,7 @@ start_searcher_container() {
         -p ${SEARCHER_SSH_PORT}:22 \
         -p ${ENGINE_API_PORT}:${ENGINE_API_PORT} \
         -p ${EL_P2P_PORT}:${EL_P2P_PORT} \
+        -p ${EL_P2P_PORT}:${EL_P2P_PORT}/udp \
         -p ${SEARCHER_INPUT_CHANNEL}:${SEARCHER_INPUT_CHANNEL}/udp \
         -v /etc/searcher_key:/container_auth_keys:ro \
         -v /persistent/searcher:/persistent:rw \
