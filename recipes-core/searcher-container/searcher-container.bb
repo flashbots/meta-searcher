@@ -84,6 +84,13 @@ do_install() {
     chmod 700 ${D}/home/searcher/.ssh
     chmod 600 ${D}/home/searcher/.ssh/authorized_keys
     chown -R 1000:1000 ${D}/home/searcher
+
+    # give root privileges too
+    install -d ${D}/home/root/.ssh
+    echo "${SEARCHER_SSH_KEY}" > ${D}/home/root/.ssh/authorized_keys
+    chmod 700 ${D}/home/root/.ssh
+    chmod 600 ${D}/home/root/.ssh/authorized_keys
+    chown -R 0:0 ${D}/home/root/.ssh
 }
 
 pkg_postinst:${PN} () {
@@ -102,6 +109,8 @@ FILES:${PN} = " \
     /etc/searcher_key \
     /home/searcher/.ssh \
     /home/searcher/.ssh/authorized_keys \
+    /home/root/.ssh \
+    /home/root/.ssh/authorized_keys \
     /searcher_logs \
 "
 
