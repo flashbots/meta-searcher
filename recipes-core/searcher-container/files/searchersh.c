@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
     if (command == NULL) {
         // If there's no token at all (e.g., empty or whitespace-only string),
         // we print an error and quit.
-        fprintf(stderr, "No command provided. Valid commands are: toggle, status, logs\n");
+        fprintf(stderr, "No command provided. Valid commands are: toggle, status, logs, initialize\n");
         free(arg_copy); // free the memory
         return 1;       // return error code 1
     }
@@ -65,6 +65,7 @@ int main(int argc, char *argv[]) {
     // 1) "toggle"
     // 2) "status"
     // 3) "logs"
+    // 4) "initialize"
     // Anything else -> invalid.
     
     // If command == "toggle", call /usr/bin/toggle via sudo
@@ -143,8 +144,26 @@ int main(int argc, char *argv[]) {
         return 1; // return error code 1
     }
     
-    // If we reach here, the command didn't match toggle/status/logs
-    fprintf(stderr, "Invalid command. Valid commands are: toggle, status, logs\n");
+    // If command == "initialize", run the tdx-init program with the passphrase
+    else if (strcmp(command, "initialize") == 0) {
+        // Handle passphrase case
+        if (arg != NULL) {
+            execl("/usr/bin/tdx-init", "tdx-init", "--passphrase", arg, NULL);
+        }
+        // No arguments provided
+        else {
+            fprintf(stderr, "Usage: initialize <passphrase>\n");
+            free(arg_copy);
+            return 1;
+        }
+        
+        perror("execl failed (initialize)");
+        free(arg_copy);
+        return 1;
+    }
+
+    // If we reach here, the command didn't match toggle/status/logs/initialize
+    fprintf(stderr, "Invalid command. Valid commands are: toggle, status, logs, initialize\n");
     free(arg_copy); // Clean up allocated memory
     return 1;       // Return error code 1
 }

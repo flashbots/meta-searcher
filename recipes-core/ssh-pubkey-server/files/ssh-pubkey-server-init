@@ -22,7 +22,7 @@ PROXY_BIN=/usr/bin/proxy-server
 PROXY_NAME=cvm-reverse-proxy-server
 PROXY_ARGS="--listen-addr=0.0.0.0:8745 \
             --target-addr=http://localhost:${SSH_PUBKEY_SERVER_PORT} \
-            --server-attestation-type=azure-tdx"
+            --server-attestation-type=dcap-tdx"
 PROXY_PIDFILE=/var/run/${PROXY_NAME}.pid
 PROXY_LOGFILE=/tmp/${PROXY_NAME}.log
 
