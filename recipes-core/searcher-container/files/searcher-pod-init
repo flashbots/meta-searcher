@@ -15,7 +15,7 @@ NAME=searcher-container
 
 # PORT FORWARDS
 SEARCHER_SSH_PORT=10022
-ENGINE_API_PORT=8551
+SYNC_PROXY_PORT=8552
 EL_P2P_PORT=30303
 SEARCHER_INPUT_CHANNEL=27017
 
@@ -38,7 +38,7 @@ start_searcher_container() {
     su -s /bin/sh $USER -c "cd ~ && $DAEMON run -d \
         --name $NAME \
         -p ${SEARCHER_SSH_PORT}:22 \
-        -p ${ENGINE_API_PORT}:${ENGINE_API_PORT} \
+        -p ${SYNC_PROXY_PORT}:${SYNC_PROXY_PORT} \
         -p ${EL_P2P_PORT}:${EL_P2P_PORT} \
         -p ${EL_P2P_PORT}:${EL_P2P_PORT}/udp \
         -p ${SEARCHER_INPUT_CHANNEL}:${SEARCHER_INPUT_CHANNEL}/udp \
