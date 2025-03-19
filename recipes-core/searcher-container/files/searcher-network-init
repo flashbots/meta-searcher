@@ -147,8 +147,10 @@ start_firewall() {
     $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p udp --dport $SEARCHER_INPUT_CHANNEL \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # Sync proxy inbound on port 8552 (TCP only)
-    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $SYNC_PROXY_PORT \
+    # Sync proxy inbound on port 8552 (TCP only) - IP whitelisted
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp -s $FLASHBOTS_NGINX_IP_1 --dport $SYNC_PROXY_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp -s $FLASHBOTS_NGINX_IP_2 --dport $SYNC_PROXY_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # CVM reverse-proxy inbound on port 8745 (TCP)
