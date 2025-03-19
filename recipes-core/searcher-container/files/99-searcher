@@ -1,1 +1,2 @@
 searcher ALL=(root) NOPASSWD: /usr/bin/toggle 
+searcher ALL=(root) NOPASSWD: /sbin/sysctl -w vm.max_map_count=2097152
