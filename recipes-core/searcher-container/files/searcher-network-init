@@ -166,12 +166,6 @@ start_firewall() {
     ###########################################################################
     # (7) ALWAYS_ON_OUT: Outbound rules that never turn off
     ###########################################################################
-    # Sync proxy outbound on port 8552 (TCP only) - IP whitelisted
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_NGINX_IP_1 --dport $SYNC_PROXY_PORT \
-        -m conntrack --ctstate NEW -j ACCEPT
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_NGINX_IP_2 --dport $SYNC_PROXY_PORT \
-        -m conntrack --ctstate NEW -j ACCEPT
-
     # NTP outbound on port 123 (UDP)
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p udp --dport $NTP_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
