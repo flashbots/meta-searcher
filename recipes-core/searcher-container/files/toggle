@@ -53,7 +53,7 @@ EL_P2P_PORT=30303
 
 # Production ports
 FB_STATE_DIFF_PORT=8547
-TITAN_STATE_DIFF_PORT=42202
+TITAN_STATE_DIFF_PORT_WSS=42203
 
 ###############################################################################
 # Delay between stopping and starting maintenance
@@ -107,10 +107,10 @@ check_delay() {
 kill_established_connections() {
     local old_mode="$1"
     if [ "$old_mode" = "production" ]; then
-        echo "Killing leftover production flows (ports $FB_STATE_DIFF_PORT, $TITAN_STATE_DIFF_PORT)..."
+        echo "Killing leftover production flows (ports $FB_STATE_DIFF_PORT, $TITAN_STATE_DIFF_PORT_WSS)..."
         # Both Flashbots and RBUILDER_02 use FB_STATE_DIFF_PORT
         $CONNTRACK -D -p tcp --dport $FB_STATE_DIFF_PORT 2>/dev/null
-        $CONNTRACK -D -p tcp --dport $TITAN_STATE_DIFF_PORT 2>/dev/null
+        $CONNTRACK -D -p tcp --dport $TITAN_STATE_DIFF_PORT_WSS 2>/dev/null
 
     elif [ "$old_mode" = "maintenance" ]; then
         echo "Killing leftover maintenance flows:"
@@ -190,15 +190,13 @@ check_searcher_namespace_rules() {
         return 1
     fi
 
-    # 3) Check if the DROP rule on port 9000 and 123 is present in OUTPUT chain
+    # 3) Check if the DROP rule on port 123 is present in OUTPUT chain
     #    -C (check) returns 0 if a matching rule is found, 1 otherwise
-    if nsenter --target "$pid" --net $IPTABLES -C OUTPUT -p tcp --dport 9000 -j DROP 2>/dev/null \
-       && nsenter --target "$pid" --net $IPTABLES -C OUTPUT -p udp --dport 9000 -j DROP 2>/dev/null \
-       && nsenter --target "$pid" --net $IPTABLES -C OUTPUT -p udp --dport 123 -j DROP 2>/dev/null; then
-        echo "OK: searcher-container firewall rules (DROP tcp/udp port 9000, udp port 123) are ACTIVE."
+    if nsenter --target "$pid" --net $IPTABLES -C OUTPUT -p udp --dport 123 -j DROP 2>/dev/null; then
+        echo "OK: searcher-container firewall rules (DROP udp port 123) are ACTIVE."
         return 0
     else
-        echo "WARNING: One or more searcher-container firewall rules (DROP ports 9000/123) are NOT found."
+        echo "WARNING: One or more searcher-container firewall rules (DROP ports 123) are NOT found."
         return 1
     fi
 }

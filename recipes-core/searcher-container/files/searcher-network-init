@@ -22,6 +22,8 @@ CONTAINER_NAME="searcher-container"
 FLASHBOTS_BUILDER_IP="131.153.11.211"
 TITAN_BUILDER_IP="52.207.17.217"
 RBUILDER_02_IP="3.16.169.173"
+FLASHBOTS_CL_ENGINE_EVENTS_1="18.220.237.111"
+FLASHBOTS_CL_ENGINE_EVENTS_2="18.222.200.115"
 
 ###############################################################################
 # Ports
@@ -29,7 +31,7 @@ RBUILDER_02_IP="3.16.169.173"
 SSH_CONTROL_PORT=22        # Inbound: SSH control plane (always on)
 SSH_DATA_PORT=10022        # Inbound: SSH data plane (maintenance mode only)
 
-CL_P2P_PORT=9000           # TCP/UDP inbound/outbound: Consensus client P2P (always on)
+SYNC_PROXY_PORT=8552       # TCP inbound/outbound: Sync proxy (always on)
 EL_P2P_PORT=30303          # TCP/UDP outbound: Execution client P2P (maintenance mode only)
 
 DNS_PORT=53                # Outbound: DNS (maintenance mode only)
@@ -40,8 +42,8 @@ SEARCHER_INPUT_CHANNEL=27017  # Inbound: Input Only Channel (always on)
 
 FLASHBOTS_STATE_DIFF_PORT=8547 # Outbound: Flashbots builder state diff (production only)
 FLASHBOTS_BUNDLE_PORT=8645     # Outbound: Flashbots builder bundle submission (production only)
-TITAN_STATE_DIFF_PORT=42202    # Outbound: Titan builder state diff (production only)
-TITAN_BUNDLE_PORT=1337         # Outbound: Titan builder bundle submission (production only)
+TITAN_STATE_DIFF_PORT_WSS=42203    # Outbound: Titan builder state diff new:42203 (production only)
+TITAN_BUNDLE_PORT_HTTPS=1338        # Outbound: Titan builder bundle submission new:1338 (production only)
 
 CVM_REVERSE_PROXY_PORT=8745      # Inbound: CVM reverse proxy (always on)
 NTP_PORT=123           # Outbound: NTP (always on)
@@ -119,7 +121,7 @@ start_firewall() {
 
     ###########################################################################
     # (4) Allow Established/Related connections (Inbound & Outbound)
-    # OUTPUT (always): SSH (22), CL P2P (9000), CVM reverse-proxy (8745)
+    # OUTPUT (always): SSH (22), SYNC PROXY (8552), CVM reverse-proxy (8745)
     # OUTPUT (maintenance): SSH (10022)
     ###########################################################################
     $IPTABLES -A INPUT  -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
@@ -147,10 +149,10 @@ start_firewall() {
     $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p udp --dport $SEARCHER_INPUT_CHANNEL \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # Consensus (CL) P2P inbound on port 9000 (TCP + UDP)
-    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp --dport $CL_P2P_PORT \
+    # Sync proxy inbound on port 8552 (TCP only) - IP whitelisted
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp -s $FLASHBOTS_CL_ENGINE_EVENTS_1 --dport $SYNC_PROXY_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
-    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p udp --dport $CL_P2P_PORT \
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp -s $FLASHBOTS_CL_ENGINE_EVENTS_2 --dport $SYNC_PROXY_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # CVM reverse-proxy inbound on port 8745 (TCP)
@@ -166,13 +168,6 @@ start_firewall() {
     ###########################################################################
     # (7) ALWAYS_ON_OUT: Outbound rules that never turn off
     ###########################################################################
-    # CL P2P outbound on port 9000 (TCP + UDP)
-    # Note: This is the lighthouse CL client run on the host, not the searcher's CL
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp --dport $CL_P2P_PORT \
-        -m conntrack --ctstate NEW -j ACCEPT
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p udp --dport $CL_P2P_PORT \
-        -m conntrack --ctstate NEW -j ACCEPT
-
     # NTP outbound on port 123 (UDP)
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p udp --dport $NTP_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
@@ -183,9 +178,9 @@ start_firewall() {
     # they can observe the presence or absence of packets. 
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_BUNDLE_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_PORT \
-        -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $RBUILDER_02_IP --dport $FLASHBOTS_BUNDLE_PORT \
+        -m conntrack --ctstate NEW -j ACCEPT
+    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_PORT_HTTPS \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Return from ALWAYS_ON_OUT back to caller (OUTPUT chain -> MODE_SELECTOR_OUT) 
@@ -250,8 +245,8 @@ start_firewall() {
     $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $RBUILDER_02_IP --dport $FLASHBOTS_STATE_DIFF_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
-    # Titan state diff
-    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_STATE_DIFF_PORT \
+    # Titan state diff WSS
+    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_STATE_DIFF_PORT_WSS \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Return from PRODUCTION_OUT back to caller (OUTPUT chain -> END) 
