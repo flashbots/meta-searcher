@@ -42,8 +42,6 @@ SEARCHER_INPUT_CHANNEL=27017  # Inbound: Input Only Channel (always on)
 
 FLASHBOTS_STATE_DIFF_PORT=8547 # Outbound: Flashbots builder state diff (production only)
 FLASHBOTS_BUNDLE_PORT=8645     # Outbound: Flashbots builder bundle submission (production only)
-TITAN_STATE_DIFF_PORT=42202    # Outbound: Titan builder state diff (production only)
-TITAN_BUNDLE_PORT=1337         # Outbound: Titan builder bundle submission (production only)
 TITAN_STATE_DIFF_PORT_WSS=42203    # Outbound: Titan builder state diff new:42203 (production only)
 TITAN_BUNDLE_PORT_HTTPS=1338        # Outbound: Titan builder bundle submission new:1338 (production only)
 
@@ -180,8 +178,6 @@ start_firewall() {
     # they can observe the presence or absence of packets. 
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $FLASHBOTS_BUILDER_IP --dport $FLASHBOTS_BUNDLE_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
-    $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_PORT \
-        -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $RBUILDER_02_IP --dport $FLASHBOTS_BUNDLE_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
     $IPTABLES -A $CHAIN_ALWAYS_ON_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_BUNDLE_PORT_HTTPS \
@@ -247,10 +243,6 @@ start_firewall() {
 
     # RBUILDER_02 state diff (same ports as Flashbots)
     $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $RBUILDER_02_IP --dport $FLASHBOTS_STATE_DIFF_PORT \
-        -m conntrack --ctstate NEW -j ACCEPT
-
-    # Titan state diff
-    $IPTABLES -A $CHAIN_PRODUCTION_OUT -p tcp -d $TITAN_BUILDER_IP --dport $TITAN_STATE_DIFF_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Titan state diff WSS
