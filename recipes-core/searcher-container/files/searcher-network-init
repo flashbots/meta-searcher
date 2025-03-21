@@ -22,8 +22,8 @@ CONTAINER_NAME="searcher-container"
 FLASHBOTS_BUILDER_IP="131.153.11.211"
 TITAN_BUILDER_IP="52.207.17.217"
 RBUILDER_02_IP="3.16.169.173"
-FLASHBOTS_NGINX_IP_1="18.220.237.111"
-FLASHBOTS_NGINX_IP_2="18.222.200.115"
+FLASHBOTS_CL_ENGINE_EVENTS_1="18.220.237.111"
+FLASHBOTS_CL_ENGINE_EVENTS_2="18.222.200.115"
 
 ###############################################################################
 # Ports
@@ -150,9 +150,9 @@ start_firewall() {
         -m conntrack --ctstate NEW -j ACCEPT
 
     # Sync proxy inbound on port 8552 (TCP only) - IP whitelisted
-    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp -s $FLASHBOTS_NGINX_IP_1 --dport $SYNC_PROXY_PORT \
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp -s $FLASHBOTS_CL_ENGINE_EVENTS_1 --dport $SYNC_PROXY_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
-    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp -s $FLASHBOTS_NGINX_IP_2 --dport $SYNC_PROXY_PORT \
+    $IPTABLES -A $CHAIN_ALWAYS_ON_IN -p tcp -s $FLASHBOTS_CL_ENGINE_EVENTS_2 --dport $SYNC_PROXY_PORT \
         -m conntrack --ctstate NEW -j ACCEPT
 
     # CVM reverse-proxy inbound on port 8745 (TCP)
