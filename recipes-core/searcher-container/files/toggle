@@ -53,7 +53,7 @@ EL_P2P_PORT=30303
 
 # Production ports
 FB_STATE_DIFF_PORT=8547
-TITAN_STATE_DIFF_PORT=42202
+TITAN_STATE_DIFF_PORT_WSS=42203
 
 ###############################################################################
 # Delay between stopping and starting maintenance
@@ -107,10 +107,10 @@ check_delay() {
 kill_established_connections() {
     local old_mode="$1"
     if [ "$old_mode" = "production" ]; then
-        echo "Killing leftover production flows (ports $FB_STATE_DIFF_PORT, $TITAN_STATE_DIFF_PORT)..."
+        echo "Killing leftover production flows (ports $FB_STATE_DIFF_PORT, $TITAN_STATE_DIFF_PORT_WSS)..."
         # Both Flashbots and RBUILDER_02 use FB_STATE_DIFF_PORT
         $CONNTRACK -D -p tcp --dport $FB_STATE_DIFF_PORT 2>/dev/null
-        $CONNTRACK -D -p tcp --dport $TITAN_STATE_DIFF_PORT 2>/dev/null
+        $CONNTRACK -D -p tcp --dport $TITAN_STATE_DIFF_PORT_WSS 2>/dev/null
 
     elif [ "$old_mode" = "maintenance" ]; then
         echo "Killing leftover maintenance flows:"
