@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
     if (command == NULL) {
         // If there's no token at all (e.g., empty or whitespace-only string),
         // we print an error and quit.
-        fprintf(stderr, "No command provided. Valid commands are: toggle, status, logs, increase-map-count\n");
+        fprintf(stderr, "No command provided. Valid commands are: toggle, status, logs\n");
         free(arg_copy); // free the memory
         return 1;       // return error code 1
     }
@@ -143,17 +143,8 @@ int main(int argc, char *argv[]) {
         return 1; // return error code 1
     }
     
-    // If command == "increase-map-count", set vm.max_map_count to 2097152
-    else if (strcmp(command, "increase-map-count") == 0) {
-        execl("/usr/bin/sudo", "sudo", "/sbin/sysctl", "-w", "vm.max_map_count=2097152", NULL);
-        
-        perror("execl failed (increase-map-count)");
-        free(arg_copy);
-        return 1;
-    }
-    
     // If we reach here, the command didn't match toggle/status/logs
-    fprintf(stderr, "Invalid command. Valid commands are: toggle, status, logs, increase-map-count\n");
+    fprintf(stderr, "Invalid command. Valid commands are: toggle, status, logs\n");
     free(arg_copy); // Clean up allocated memory
     return 1;       // Return error code 1
 }
