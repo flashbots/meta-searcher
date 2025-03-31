@@ -144,25 +144,16 @@ int main(int argc, char *argv[]) {
         return 1; // return error code 1
     }
     
-    // If command == "initialize", run the tdx-init program with the passphrase
+    // If command == "initialize", run the tdx-init program with set-passphrase command
     else if (strcmp(command, "initialize") == 0) {
-        // Handle passphrase case
-        if (arg != NULL) {
-            execl("/usr/bin/tdx-init", "tdx-init", "--passphrase", arg, NULL);
-        }
-        // No arguments provided
-        else {
-            fprintf(stderr, "Usage: initialize <passphrase>\n");
-            free(arg_copy);
-            return 1;
-        }
+        execl("/usr/bin/tdx-init", "tdx-init", "set-passphrase", NULL);
         
         perror("execl failed (initialize)");
         free(arg_copy);
         return 1;
     }
 
-    // If we reach here, the command didn't match toggle/status/logs/initialize
+    // If we reach here, the command didn't match any of the valid commands
     fprintf(stderr, "Invalid command. Valid commands are: toggle, status, logs, initialize\n");
     free(arg_copy); // Clean up allocated memory
     return 1;       // Return error code 1

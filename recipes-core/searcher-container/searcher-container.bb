@@ -58,10 +58,6 @@ do_install() {
     chown 1000:adm ${D}/searcher_logs
     # TODO: add noexec and other flags to mount
 
-    install -d ${D}/home/searcher/.ssh
-    touch ${D}/home/searcher/.ssh/authorized_keys
-    chmod 700 ${D}/home/searcher/.ssh
-    chmod 600 ${D}/home/searcher/.ssh/authorized_keys
     chown -R 1000:1000 ${D}/home/searcher
 }
 
@@ -79,8 +75,6 @@ FILES:${PN} = " \
     /etc/init.d/searcher-pod \
     /persistent \
     /etc/searcher_key \
-    /home/searcher/.ssh \
-    /home/searcher/.ssh/authorized_keys \
     /searcher_logs \
 "
 
