@@ -10,12 +10,14 @@ SRC_URI = " \
 
 inherit update-rc.d
 
-# Init script configuration
 INITSCRIPT_PACKAGES = "${PN}"
-INITSCRIPT_NAME_${PN} = "wait-for-key"
-INITSCRIPT_PARAMS_${PN} = "defaults 59"
-INITSCRIPT_NAME_${PN}-disk-encryption = "disk-encryption"
-INITSCRIPT_PARAMS_${PN}-disk-encryption = "defaults 88"
+INITSCRIPT_NAME:${PN} = "wait-for-key"
+INITSCRIPT_PARAMS:${PN} = "defaults 59"
+
+PACKAGES =+ "${PN}-disk-encryption"
+INITSCRIPT_PACKAGES += "${PN}-disk-encryption"
+INITSCRIPT_NAME:${PN}-disk-encryption = "disk-encryption"
+INITSCRIPT_PARAMS:${PN}-disk-encryption = "defaults 88"
 
 RDEPENDS:${PN} = "tdx-init"
 
@@ -26,7 +28,5 @@ do_install() {
     install -m 0755 ${WORKDIR}/disk-encryption ${D}${sysconfdir}/init.d/
 }
 
-FILES:${PN} = " \
-    ${sysconfdir}/init.d/wait-for-key \
-    ${sysconfdir}/init.d/disk-encryption \
-"
+FILES:${PN} = "${sysconfdir}/init.d/wait-for-key"
+FILES:${PN}-disk-encryption = "${sysconfdir}/init.d/disk-encryption"
