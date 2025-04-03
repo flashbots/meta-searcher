@@ -10,9 +10,14 @@ SRC_URI = " \
     file://go.mod \
 "
 
-inherit go
+inherit go-mod
 
 GO_IMPORT = "github.com/flashbots/tdx-init"
+
+GO_LINKSHARED = ""
+INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
+INHIBIT_PACKAGE_STRIP = "1"
+GO_EXTRA_LDFLAGS = "-s -w -buildid="
 
 # Dependencies needed for disk encryption and filesystem operations
 RDEPENDS:${PN} += " \
@@ -25,7 +30,7 @@ RDEPENDS:${PN} += " \
 
 do_compile() {
     cd ${WORKDIR}
-    ${GO} build -o tdx-init
+    ${GO} build -trimpath -ldflags "${GO_EXTRA_LDFLAGS}" -o tdx-init
 }
 
 do_install() {
