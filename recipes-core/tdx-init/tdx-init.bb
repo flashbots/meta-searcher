@@ -10,7 +10,7 @@ SRC_URI = " \
     file://go.mod \
 "
 
-inherit go-mod
+inherit go
 
 GO_IMPORT = "github.com/flashbots/tdx-init"
 
