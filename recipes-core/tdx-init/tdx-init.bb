@@ -24,11 +24,11 @@ RDEPENDS:${PN} += " \
 "
 
 do_compile() {
-    cd ${S}/src/${GO_IMPORT}
+    cd ${S}
     ${GO} build -o tdx-init
 }
 
 do_install() {
     install -d ${D}${bindir}
-    install -m 0755 ${S}/src/${GO_IMPORT}/tdx-init ${D}${bindir}/
+    install -m 0755 ${S}/tdx-init ${D}${bindir}/
 }
