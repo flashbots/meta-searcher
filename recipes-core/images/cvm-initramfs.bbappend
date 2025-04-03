@@ -1,1 +1,1 @@
-PACKAGE_INSTALL:append = " dropbear ssh-pubkey-server searcher-container searcher-container-network fluentbit-container lighthouse conntrack-tools logrotate curl tdx-init tdx-init-scripts"
+PACKAGE_INSTALL:append = " dropbear ssh-pubkey-server searcher-container searcher-container-network fluentbit-container lighthouse conntrack-tools logrotate curl tdx-init tdx-wait-for-key tdx-disk-encryption"
