@@ -75,7 +75,6 @@ FILES:${PN} = " \
     /home/searcher/.config/cni/net.d/* \
     /etc/init.d/searcher-pod \
     /persistent \
-    /etc/searcher_key \
     /searcher_logs \
 "
 

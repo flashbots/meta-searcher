@@ -59,7 +59,7 @@ func waitForKey() {
 		}
 
 		key := string(body)
-		matched, _ := regexp.MatchString(`^[A-Za-z0-9+/]{43}$`, key)
+		matched, _ := regexp.MatchString(`^[A-Za-z0-9+/]{68}$`, key)
 		if !matched {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprint(w, "Invalid key format, expected base64-encoded OpenSSH ed25519 public key")
