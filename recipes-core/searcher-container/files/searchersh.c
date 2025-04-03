@@ -3,8 +3,25 @@
 #include <string.h>     // For strcmp, strtok
 #include <unistd.h>     // For execl
 #include <ctype.h>      // For isdigit
+#include <sys/stat.h>   // For stat
 
 #define MAX_LINES 10000000
+
+// Check if initialization is complete (persistent is mounted)
+int is_initialized() {
+    struct stat st_mount, st_parent;
+    
+    if (stat("/persistent", &st_mount) != 0) {
+        return 0;
+    }
+    
+    if (stat("/persistent/..", &st_parent) != 0) {
+        return 0;
+    }
+    
+    // Different device IDs mean it's a mount point
+    return (st_mount.st_dev != st_parent.st_dev);
+}
 
 // argc is the number of command-line arguments
 // argv is an array of C-strings (character pointers)
@@ -61,11 +78,26 @@ int main(int argc, char *argv[]) {
     //   arg     = "3"
     char *arg = strtok(NULL, " ");
 
+    // If command == "initialize", run the tdx-init program with set-passphrase command
+    if (strcmp(command, "initialize") == 0) {
+        execl("/usr/bin/sudo", "sudo", "/usr/bin/tdx-init", "set-passphrase", NULL);
+        
+        perror("execl failed (initialize)");
+        free(arg_copy);
+        return 1;
+    }
+    
+    // Check if system is initialized before allowing other commands
+    if (!is_initialized()) {
+        fprintf(stderr, "System not initialized. Please run 'initialize' command first.\n");
+        free(arg_copy);
+        return 1;
+    }
+
     // Compare the first token to see which command we want.
     // 1) "toggle"
     // 2) "status"
     // 3) "logs"
-    // 4) "initialize"
     // Anything else -> invalid.
     
     // If command == "toggle", call /usr/bin/toggle via sudo
@@ -142,15 +174,6 @@ int main(int argc, char *argv[]) {
         perror("execl failed (logs)");
         free(arg_copy);
         return 1; // return error code 1
-    }
-    
-    // If command == "initialize", run the tdx-init program with set-passphrase command
-    else if (strcmp(command, "initialize") == 0) {
-        execl("/usr/bin/sudo", "sudo", "/usr/bin/tdx-init", "set-passphrase", NULL);
-        
-        perror("execl failed (initialize)");
-        free(arg_copy);
-        return 1;
     }
 
     // If we reach here, the command didn't match any of the valid commands
