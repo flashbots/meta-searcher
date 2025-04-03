@@ -91,6 +91,10 @@ apply_firewall_rules() {
     
     # Enter network namespace and apply DROP rule on port 123 UDP
     nsenter --target "$pid" --net iptables -A OUTPUT -p udp --dport 123 -j DROP
+
+    # Drop outbound traffic from 27017
+    nsenter --target "$pid" --net iptables -A OUTPUT -p udp --sport 27017 -j DROP
+    nsenter --target "$pid" --net iptables -A OUTPUT -p tcp --sport 27017 -j DROP
 }
 
 case "$1" in
