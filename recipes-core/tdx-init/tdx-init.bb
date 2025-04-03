@@ -5,8 +5,9 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 SRC_URI = " \
     file://tdx-init.go \
+    file://keys.go \
+    file://passphrase.go \
     file://go.mod \
-    file://go.sum \
 "
 
 inherit go
