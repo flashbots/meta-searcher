@@ -29,6 +29,8 @@ func main() {
 		log.Fatalln("Usage: tdx-init [wait-for-key|set-passphrase]")
 	}
 
+	os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin")
+
 	devices, err := filepath.Glob(deviceGlob)
 	if err != nil || len(devices) == 0 {
 		log.Fatalln("Error: SCSI device not found")
