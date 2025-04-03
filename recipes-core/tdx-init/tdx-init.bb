@@ -30,7 +30,7 @@ RDEPENDS:${PN} += " \
 
 do_compile() {
     cd ${WORKDIR}
-    ${GO} build -trimpath -ldflags "${GO_EXTRA_LDFLAGS}" -o tdx-init
+    ${GO} build -trimpath -buildmode=pie -ldflags "${GO_EXTRA_LDFLAGS}" -o tdx-init
 }
 
 do_install() {
