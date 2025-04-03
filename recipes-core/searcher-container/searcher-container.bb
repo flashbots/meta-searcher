@@ -58,7 +58,7 @@ do_install() {
     chown 1000:adm ${D}/searcher_logs
     # TODO: add noexec and other flags to mount
 
-    install -d ${D}/home/searcher/.ssh
+    install -d ${D}/home/searcher
     chown -R 1000:1000 ${D}/home/searcher
 }
 

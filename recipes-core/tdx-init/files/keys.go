@@ -76,9 +76,14 @@ func waitForKey() {
 }
 
 func writeKey(key string) {
-	// Write authorized_keys
 	os.MkdirAll(sshDir, 0700)
 
+	// Set ownership of .ssh directory
+	if err := os.Chown(sshDir, 1000, 1000); err != nil {
+		log.Printf("Warning: Could not set ownership on .ssh dir: %v", err)
+	}
+
+	// Write authorized_keys with correct permissions
 	authKeysFile := filepath.Join(sshDir, "authorized_keys")
 	f, err := os.OpenFile(authKeysFile, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
@@ -90,7 +95,12 @@ func writeKey(key string) {
 		log.Fatalf("Error writing to authorized_keys: %v", err)
 	}
 
-	// Write to separate key file
+	// Set ownership of authorized_keys file
+	if err := os.Chown(authKeysFile, 1000, 1000); err != nil {
+		log.Printf("Warning: Could not set ownership on authorized_keys: %v", err)
+	}
+
+	// Write to separate key file (still needed for the system)
 	if err := os.WriteFile(keyFile, []byte(key), 0600); err != nil {
 		log.Fatalf("Error writing key file: %v", err)
 	}

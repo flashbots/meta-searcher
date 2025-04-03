@@ -115,7 +115,6 @@ func mountExistingDisk(passphrase string) {
 }
 
 func checkMounted() bool {
-	// Use /proc/mounts instead of findmnt command
 	data, err := os.ReadFile("/proc/mounts")
 	if err != nil {
 		return false
