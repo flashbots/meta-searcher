@@ -38,7 +38,7 @@ func setPassphrase() {
 
 func setupNewDisk(passphrase string) {
 	// Format with LUKS2
-	cmd := exec.Command("cryptsetup", "luksFormat", "--type", "luks2", "--force", devicePath)
+	cmd := exec.Command("cryptsetup", "luksFormat", "--type", "luks2", "-q", devicePath)
 	cmd.Stdin = strings.NewReader(passphrase)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Error formatting disk: %v\n", err)
