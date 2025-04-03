@@ -21,7 +21,7 @@ is_mounted() {
 }
 
 case "$1" in
-    start)
+    start|restart|force-reload)
         echo "Starting $DESC: Waiting for $MOUNT_POINT to be mounted..."
         
         # Wait for the mount point to be ready
@@ -32,11 +32,6 @@ case "$1" in
         echo "$MOUNT_POINT is mounted, continuing boot"
         ;;
     stop)
-        # Nothing to do on stop
-        ;;
-    restart|force-reload)
-        $0 stop
-        $0 start
         ;;
     status)
         if is_mounted; then

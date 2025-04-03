@@ -115,8 +115,12 @@ func mountExistingDisk(passphrase string) {
 }
 
 func checkMounted() bool {
-	cmd := exec.Command("findmnt", mountPoint)
-	return cmd.Run() == nil
+	// Use /proc/mounts instead of findmnt command
+	data, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), " "+mountPoint+" ")
 }
 
 func cleanupMount() {
