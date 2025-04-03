@@ -9,10 +9,6 @@ inherit update-rc.d
 INITSCRIPT_NAME = "disk-encryption"
 INITSCRIPT_PARAMS = "defaults 88"
 
-pkg_postinst:${PN}() {
-    exit 0
-}
-
 do_install() {
     install -d ${D}${sysconfdir}/init.d
     install -m 0755 ${WORKDIR}/disk-encryption ${D}${sysconfdir}/init.d/
