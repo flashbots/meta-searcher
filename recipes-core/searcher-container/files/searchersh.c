@@ -146,7 +146,7 @@ int main(int argc, char *argv[]) {
     
     // If command == "initialize", run the tdx-init program with set-passphrase command
     else if (strcmp(command, "initialize") == 0) {
-        execl("/usr/bin/tdx-init", "tdx-init", "set-passphrase", NULL);
+        execl("/usr/bin/sudo", "sudo", "/usr/bin/tdx-init", "set-passphrase", NULL);
         
         perror("execl failed (initialize)");
         free(arg_copy);
