@@ -7,7 +7,7 @@ SRC_URI = "file://wait-for-key"
 inherit update-rc.d
 
 INITSCRIPT_NAME = "wait-for-key"
-INITSCRIPT_PARAMS = "defaults 59"
+INITSCRIPT_PARAMS = "defaults 58"
 
 RDEPENDS:${PN} = "tdx-init"
 
