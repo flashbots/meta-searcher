@@ -34,7 +34,6 @@ func waitForKey() {
 			log.Fatalln("Error: No metadata found in token")
 		}
 
-		// Write the key
 		writeKey(string(keyData))
 		log.Printf("Key extracted from LUKS header and written to %s", keyFile)
 		return

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -65,32 +64,32 @@ func setupNewDisk(passphrase string) {
 	}
 
 	// Import the SSH key as token
-	key, _ := os.ReadFile(keyFile)
+	key, err := os.ReadFile(keyFile)
+	if err != nil {
+		cleanupMount()
+		log.Fatalf("Error reading SSH key file: %v", err)
+	}
+
 	token := Token{
 		Type:     "user",
 		Keyslots: []string{},
 		UserData: map[string]string{
-			"metadata": base64.StdEncoding.EncodeToString(key),
+			"metadata": string(key),
 		},
 	}
 
-	tokenJSON, _ := json.Marshal(token)
-	tmpFile, err := os.CreateTemp("", "luks-token-*.json")
+	tokenJSON, err := json.Marshal(token)
 	if err != nil {
 		cleanupMount()
-		log.Fatalf("Error creating temp file: %v\n", err)
+		log.Fatalf("Error marshaling token JSON: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.Write(tokenJSON); err != nil {
-		cleanupMount()
-		log.Fatalf("Error writing LUKS token temp file: %v\n", err)
-	}
-	tmpFile.Close()
+	cmd = exec.Command("cryptsetup", "token", "import", "--token-id", "1", devicePath)
+	cmd.Stdin = strings.NewReader(string(tokenJSON))
 
-	if err := exec.Command("cryptsetup", "token", "import", "--token-id", "1", devicePath, tmpFile.Name()).Run(); err != nil {
+	if err := cmd.Run(); err != nil {
 		cleanupMount()
-		log.Fatalf("Error writing public key to LUKS header: %v\n", err)
+		log.Fatalf("Error importing token to LUKS header: %v", err)
 	}
 
 	fmt.Println("Encrypted disk initialized and mounted successfully")
