@@ -1,1 +1,1 @@
-PACKAGE_INSTALL:append = " dropbear ssh-pubkey-server disk-encryption searcher-container searcher-container-network fluentbit-container lighthouse conntrack-tools logrotate curl su-restriction vm-max-map-count"
+PACKAGE_INSTALL:append = " dropbear ssh-pubkey-server disk-encryption searcher-container searcher-container-network fluentbit-container lighthouse conntrack-tools logrotate curl vm-max-map-count"
