@@ -40,6 +40,7 @@ start_searcher_container() {
         -p ${SEARCHER_SSH_PORT}:22 \
         -p ${ENGINE_API_PORT}:${ENGINE_API_PORT} \
         -p ${EL_P2P_PORT}:${EL_P2P_PORT} \
+        -p ${EL_P2P_PORT}:${EL_P2P_PORT}/udp \
         -p ${SEARCHER_INPUT_CHANNEL}:${SEARCHER_INPUT_CHANNEL}/udp \
         -v /etc/searcher_key:/container_auth_keys:ro \
         -v /persistent/searcher:/persistent:rw \
@@ -90,6 +91,10 @@ apply_firewall_rules() {
     
     # Enter network namespace and apply DROP rule on port 123 UDP
     nsenter --target "$pid" --net iptables -A OUTPUT -p udp --dport 123 -j DROP
+
+    # Drop outbound traffic from 27017
+    nsenter --target "$pid" --net iptables -A OUTPUT -p udp --sport 27017 -j DROP
+    nsenter --target "$pid" --net iptables -A OUTPUT -p tcp --sport 27017 -j DROP
 }
 
 case "$1" in

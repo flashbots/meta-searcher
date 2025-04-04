@@ -80,7 +80,7 @@ do_install() {
     echo "${SEARCHER_SSH_KEY}" > ${D}/etc/searcher_key
 
     install -d ${D}/home/searcher/.ssh
-    echo "${SEARCHER_SSH_KEY}" > ${D}/home/searcher/.ssh/authorized_keys
+    echo "no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${SEARCHER_SSH_KEY}" > ${D}/home/searcher/.ssh/authorized_keys
     chmod 700 ${D}/home/searcher/.ssh
     chmod 600 ${D}/home/searcher/.ssh/authorized_keys
     chown -R 1000:1000 ${D}/home/searcher
