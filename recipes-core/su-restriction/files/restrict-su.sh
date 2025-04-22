@@ -21,6 +21,14 @@ case "$1" in
     # Lock the root account
     passwd -l root
 
+    # Print dropbear flags
+    echo "Current dropbear flags:"
+    ps aux | grep dropbear | grep -v grep
+
+    # Print SSH key
+    echo "Searcher SSH key and config:"
+    cat /home/searcher/.ssh/authorized_keys
+
     echo "Su and root access restrictions implemented"
     ;;
   stop)
