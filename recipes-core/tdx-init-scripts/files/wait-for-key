@@ -1,0 +1,41 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          wait-for-key
+# Required-Start:    $remote_fs
+# Required-Stop:     $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Wait for SSH key
+# Description:       Waits for SSH key to be provided or extracted from LUKS header
+### END INIT INFO
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DESC="TDX SSH Key Provider"
+NAME=wait-for-key
+DAEMON=/usr/bin/tdx-init
+
+case "$1" in
+    start|restart|force-reload)
+        echo "Starting $DESC: Waiting for SSH key..."
+        # Simply execute tdx-init wait-for-key and let it block until complete
+        $DAEMON wait-for-key
+        echo "SSH key received and stored successfully"
+        ;;
+    stop)
+        ;;
+    status)
+        if [ -f /etc/searcher_key ]; then
+            echo "SSH key is present"
+            exit 0
+        else
+            echo "SSH key is not present"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

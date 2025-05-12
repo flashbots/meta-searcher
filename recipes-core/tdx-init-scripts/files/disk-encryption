@@ -1,0 +1,51 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          disk-encryption
+# Required-Start:    $remote_fs wait-for-key
+# Required-Stop:     $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Wait for disk encryption setup
+# Description:       Waits until /persistent is mounted before proceeding
+### END INIT INFO
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DESC="Disk Encryption Check"
+NAME=disk-encryption
+MOUNT_POINT=/persistent
+
+is_mounted() {
+    # Check if the mount point exists in /proc/mounts
+    grep -q " $MOUNT_POINT " /proc/mounts
+    return $?
+}
+
+case "$1" in
+    start|restart|force-reload)
+        echo "Starting $DESC: Waiting for $MOUNT_POINT to be mounted..."
+        
+        # Wait for the mount point to be ready
+        while ! is_mounted; do
+            sleep 1
+        done
+        
+        echo "$MOUNT_POINT is mounted, continuing boot"
+        ;;
+    stop)
+        ;;
+    status)
+        if is_mounted; then
+            echo "$MOUNT_POINT is mounted"
+            exit 0
+        else
+            echo "$MOUNT_POINT is not mounted"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

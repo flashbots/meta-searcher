@@ -42,7 +42,6 @@ start_searcher_container() {
         -p ${EL_P2P_PORT}:${EL_P2P_PORT} \
         -p ${EL_P2P_PORT}:${EL_P2P_PORT}/udp \
         -p ${SEARCHER_INPUT_CHANNEL}:${SEARCHER_INPUT_CHANNEL}/udp \
-        -v /etc/searcher_key:/container_auth_keys:ro \
         -v /persistent/searcher:/persistent:rw \
         -v /etc/searcher/ssh_hostkey:/etc/searcher/ssh_hostkey:rw \
         -v /persistent/searcher_logs:/var/log/searcher:rw \
@@ -54,7 +53,7 @@ start_searcher_container() {
             DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server && \
             mkdir -p /run/sshd && \
             mkdir -p /root/.ssh && \
-            cp /container_auth_keys /root/.ssh/authorized_keys && \
+            echo \"ssh-ed25519 $(cat /etc/searcher_key)\" > /root/.ssh/authorized_keys && \
             chmod 700 /root/.ssh && \
             chmod 600 /root/.ssh/authorized_keys && \
             cp /etc/ssh/ssh_host_ed25519_key.pub /etc/searcher/ssh_hostkey/host_key.pub && \
