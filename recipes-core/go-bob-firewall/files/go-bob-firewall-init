@@ -1,0 +1,57 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          go-bob-firewall
+# Required-Start:    $network $remote_fs $syslog
+# Required-Stop:     $network $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start Bob Firewall at boot time
+# Description:       Enable Bob Firewall service.
+### END INIT INFO
+
+DAEMON=/usr/bin/go-bob-firewall
+NAME=go-bob-firewall
+DESC="Bob Firewall"
+PIDFILE=/var/run/$NAME.pid
+LOGFILE=/var/log/$NAME.log
+
+start() {
+    echo -n "Starting $DESC: "
+    echo "Starting $DESC" > /var/volatile/system-api.fifo
+    start-stop-daemon -S --make-pidfile -p $PIDFILE -m -b -a $DAEMON -- $DAEMON_ARGS > $LOGFILE 2>&1
+    echo "$NAME."
+}
+
+stop() {
+    echo -n "Stopping $DESC: "
+    echo "Stopping $DESC" > /var/volatile/system-api.fifo
+    start-stop-daemon --stop --quiet --pidfile $PIDFILE
+    rm -f $PIDFILE
+    echo "$NAME."
+}
+
+restart() {
+    echo "Restarting $DESC: "
+    echo "Restarting $DESC" > /var/volatile/system-api.fifo
+    stop
+    sleep 1
+    start
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart|force-reload)
+        restart
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|force-reload}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0
